@@ -369,6 +369,10 @@ class AppLogo extends StatelessWidget {
                 Text('MANAGER', style: T.display(context, size: 22, color: ink).copyWith(height: 0.95)),
                 const SizedBox(height: 3),
                 Container(width: 64, height: 3, color: const Color(0xFF2E7DD7)),
+                const SizedBox(height: 3),
+                Text('LOGISTICS & WAREHOUSE',
+                    style: T.body(context, size: 6.5, weight: FontWeight.w700, color: ink)
+                        .copyWith(letterSpacing: 0.8)),
               ],
             ),
           ),

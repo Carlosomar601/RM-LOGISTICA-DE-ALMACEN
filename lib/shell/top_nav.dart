@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/app_state.dart';
-import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import 'sidebar.dart';
@@ -30,16 +29,7 @@ class TopNav extends ConsumerWidget {
             child: Row(
               children: [
                 const AppLogo(height: 46),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'LOGISTICS & WAREHOUSE',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: T.body(context, size: 10, weight: FontWeight.w700, color: c.inkMuted)
-                        .copyWith(letterSpacing: 1),
-                  ),
-                ),
+                const Spacer(),
                 const ThemeToggle(compact: true),
               ],
             ),

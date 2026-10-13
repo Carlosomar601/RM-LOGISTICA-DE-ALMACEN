@@ -41,19 +41,9 @@ class Sidebar extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
+            // El logo ya incluye "Logistics & Warehouse".
             padding: const EdgeInsets.fromLTRB(18, 22, 18, 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const AppLogo(height: 54),
-                const SizedBox(height: 10),
-                Text(
-                  'LOGISTICS & WAREHOUSE',
-                  style: T.body(context, size: 10.5, weight: FontWeight.w700, color: c.inkMuted)
-                      .copyWith(letterSpacing: 1.1),
-                ),
-              ],
-            ),
+            child: const Align(alignment: Alignment.centerLeft, child: AppLogo(height: 84)),
           ),
           const SizedBox(height: 12),
           Expanded(

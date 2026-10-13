@@ -25,12 +25,12 @@ flutter build web              # salida en build\web
 
 ## Logo
 
-Copia los dos archivos (520×253, fondo transparente) en `assets/`:
+Incluidos en `assets/` (1040×501, fondo transparente; ya traen "Logistics & Warehouse"):
 
 - `assets/logo_on_dark.webp` — texto blanco (tema oscuro)
-- `assets/logo_on_light.webp` — tinta navy #0b0e21 (tema claro)
+- `assets/logo_on_light.webp` — tinta navy #0b0e21 (tema claro), generado a partir del anterior
 
-Mientras no estén, la app muestra un logo de respaldo en texto.
+Si faltaran, la app muestra un logo de respaldo en texto.
 
 ## Notas técnicas
 
