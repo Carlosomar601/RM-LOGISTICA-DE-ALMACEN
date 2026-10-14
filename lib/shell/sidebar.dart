@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/session_widgets.dart';
 import '../state/app_state.dart';
+import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../util/format.dart';
 import '../widgets/common.dart';
 import '../widgets/pick_step_row.dart';
 
@@ -67,12 +70,26 @@ class Sidebar extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const SessionPanel(),
+                const SizedBox(height: 14),
                 const ThemeToggle(),
                 const SizedBox(height: 12),
                 Text('Demo funcional · datos de ejemplo', style: T.muted(context, size: 11.5)),
                 const SizedBox(height: 2),
-                Text('Centeno Tire — Almacén Central',
+                Text('${s.settings.companyName} — ${s.settings.warehouseName}',
                     style: T.body(context, size: 11.5, weight: FontWeight.w600, color: c.inkMuted)),
+                Builder(builder: (context) {
+                  final sync = ref.watch(syncProvider);
+                  final last = sync.settings.lastSync;
+                  if (!sync.running && last == null) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      sync.running ? 'Sincronizando con RM…' : 'Última sincronización ${fmtDateTime(last!)}',
+                      style: T.muted(context, size: 11),
+                    ),
+                  );
+                }),
               ],
             ),
           ),

@@ -5,6 +5,7 @@ import '../../models/order.dart';
 import '../../models/pick_session.dart';
 import '../../models/tone.dart';
 import '../../state/app_state.dart';
+import '../../sync/sync_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../util/format.dart';
@@ -50,6 +51,24 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> with SingleTickerPr
     showToast(ref, 'Nueva orden $id de ${o.customer} → ${o.store}');
   }
 
+  Future<void> _syncRm() async {
+    final parts = await ref.read(syncProvider.notifier).syncNow();
+    if (!mounted) return;
+    final orders = parts.where((p) => !p.label.startsWith('Recibos')).toList();
+    final failed = orders.where((p) => !p.ok && !p.notAvailable).toList();
+    final missing = orders.where((p) => p.notAvailable).length;
+    showToast(
+      ref,
+      orders.isEmpty
+          ? 'Ninguna tienda tiene dirección API. Configúrala en Administración → Tiendas.'
+          : failed.isNotEmpty
+              ? '${failed.first.label}: ${failed.first.message}'
+              : missing == orders.length
+                  ? 'La API aún no tiene los endpoints de órdenes y facturas (ver Administración → Parámetros).'
+                  : 'Órdenes y facturas sincronizadas con RM',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(appProvider);
@@ -65,7 +84,13 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> with SingleTickerPr
           title: 'Órdenes entrantes',
           subtitle:
               'Órdenes de venta de las sucursales. Calcula la ruta de piqueo FIFO de todos los artículos y verifica cada canasta antes de despachar.',
-          actions: [FilledButton(onPressed: _simulate, child: const Text('+ Simular orden entrante'))],
+          actions: [
+            FilledButton(
+              onPressed: ref.watch(syncProvider).running ? null : _syncRm,
+              child: Text(ref.watch(syncProvider).running ? 'Sincronizando…' : 'Sincronizar con RM'),
+            ),
+            OutlinedButton(onPressed: _simulate, child: const Text('+ Simular orden entrante')),
+          ],
         ),
         TabBar(
           controller: _tabs,
@@ -142,12 +167,19 @@ class _OrderCard extends ConsumerWidget {
       title: '${o.id} — ${o.customer}',
       monoTitle: false,
       subtitle: '${o.store} · ${o.items.length} artículo(s) · ${fmtDate(o.date)}',
-      trailing: AppBadge(label, tone: tone),
+      trailing: Wrap(spacing: 6, children: [
+        if (o.isRm) AppBadge(o.source == OrderSource.rmInvoice ? 'RM · Factura' : 'RM · Orden', tone: Tone.accent),
+        AppBadge(label, tone: tone),
+      ]),
       expanded: expanded,
       onToggle: onToggle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (o.syncNote != null) ...[
+            NoteBox(o.syncNote!, tone: o.syncNote!.contains('revisar') ? Tone.crit : Tone.warn),
+            const SizedBox(height: 12),
+          ],
           Container(
             decoration: BoxDecoration(
               border: Border.all(color: c.border),

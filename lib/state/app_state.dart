@@ -3,7 +3,12 @@ import 'dart:math';
 import 'package:collection/collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/rm_api.dart';
+import '../auth/audit_log.dart';
+import '../auth/user_store.dart';
+import '../config/app_config.dart';
 import '../data/seed.dart';
+import '../models/admin_config.dart';
 import '../models/app_user.dart';
 import '../models/inv_row.dart';
 import '../models/movement.dart';
@@ -12,6 +17,8 @@ import '../models/pick_session.dart';
 import '../models/product.dart';
 import '../models/receipt.dart';
 import '../models/store_transfer.dart';
+import '../sync/dispatch_ledger.dart';
+import '../sync/sync_settings.dart';
 import '../util/clock.dart';
 import '../util/format.dart';
 import 'pick_engine.dart';
@@ -38,7 +45,7 @@ extension AppViewX on AppView {
         AppView.picking => 'Piqueo FIFO',
         AppView.transfers => 'Transferencias',
         AppView.history => 'Historial',
-        AppView.users => 'Usuarios',
+        AppView.users => 'Administración',
         AppView.about => 'Resumen del proyecto',
       };
 }
@@ -73,8 +80,16 @@ class AppState {
     required this.binTransfers,
     required this.users,
     required this.pickSessions,
+    required this.stores,
+    required this.bins,
+    required this.settings,
+    required this.rolePresets,
+    required this.importedLineIds,
     this.currentView = AppView.dashboard,
     this.simulatedUserId,
+    this.currentUserId,
+    this.userStoreError,
+    this.logoutReason,
     this.transferPrefill,
     this.orderSeq = 10504,
     this.receiptSeq = 3433,
@@ -86,6 +101,9 @@ class AppState {
     this.stepSeq = 1,
     this.userSeq = 5,
     this.prefillSeq = 1,
+    this.storeSeq = 4,
+    this.binSeq = 1,
+    this.productSeq = 11,
   });
 
   factory AppState.seed() => AppState(
@@ -98,6 +116,11 @@ class AppState {
         binTransfers: seedBinTransfers(),
         users: seedUsers(),
         pickSessions: {},
+        stores: seedStores(),
+        bins: seedBins(),
+        settings: AppSettings(),
+        rolePresets: {for (final r in kRoles) r: rolePreset(r)},
+        importedLineIds: {},
       );
 
   final List<Product> products;
@@ -109,10 +132,25 @@ class AppState {
   final List<BinTransfer> binTransfers;
   final List<AppUser> users;
   final Map<String, PickSession> pickSessions;
+  final List<Store> stores;
+  final List<Bin> bins;
+  AppSettings settings;
+  /// Líneas de recibo ya importadas desde RM: `storeId|LineID`.
+  final Set<String> importedLineIds;
+  final Map<String, Map<Area, bool>> rolePresets;
   AppView currentView;
   String? simulatedUserId;
+
+  /// Usuario con sesión iniciada (null = pantalla de PIN).
+  String? currentUserId;
+
+  /// users.json dañado: no se puede iniciar sesión.
+  String? userStoreError;
+
+  /// Motivo del último cierre automático, para mostrarlo en la pantalla de PIN.
+  String? logoutReason;
   StoreTransferPrefill? transferPrefill;
-  int orderSeq, receiptSeq, lotSeq, tbSeq, tsSeq, movementSeq, invSeq, stepSeq, userSeq, prefillSeq;
+  int orderSeq, receiptSeq, lotSeq, tbSeq, tsSeq, movementSeq, invSeq, stepSeq, userSeq, prefillSeq, storeSeq, binSeq, productSeq;
 
   /// Copia superficial: nueva identidad para notificar a Riverpod.
   AppState clone() => AppState(
@@ -125,8 +163,16 @@ class AppState {
         binTransfers: binTransfers,
         users: users,
         pickSessions: pickSessions,
+        stores: stores,
+        bins: bins,
+        settings: settings,
+        rolePresets: rolePresets,
+        importedLineIds: importedLineIds,
         currentView: currentView,
         simulatedUserId: simulatedUserId,
+        currentUserId: currentUserId,
+        userStoreError: userStoreError,
+        logoutReason: logoutReason,
         transferPrefill: transferPrefill,
         orderSeq: orderSeq,
         receiptSeq: receiptSeq,
@@ -138,6 +184,9 @@ class AppState {
         stepSeq: stepSeq,
         userSeq: userSeq,
         prefillSeq: prefillSeq,
+        storeSeq: storeSeq,
+        binSeq: binSeq,
+        productSeq: productSeq,
       );
 
   // ---------- Selectores ----------
@@ -166,10 +215,10 @@ class AppState {
   int get totalCommitted => products.fold(0, (a, p) => a + p.committed);
 
   int get ageAlerts =>
-      inventory.where((r) => r.qty > 0 && ageDays(r.entryDate) >= kAgeAlertDays).length;
+      inventory.where((r) => r.qty > 0 && ageDays(r.entryDate) >= settings.ageAlertDays).length;
 
   List<InvRow> get staleRows => fifoSorted(
-      inventory.where((r) => r.qty > 0 && ageDays(r.entryDate) >= kStaleDays));
+      inventory.where((r) => r.qty > 0 && ageDays(r.entryDate) >= settings.staleDays));
 
   List<Receipt> get pendingReceipts => receipts.where((r) => r.isPending).toList();
 
@@ -177,11 +226,17 @@ class AppState {
 
   List<Order> get completedOrders => orders.where((o) => !o.isOpen).toList();
 
+  AppUser? get currentUser =>
+      currentUserId == null ? null : users.firstWhereOrNull((u) => u.id == currentUserId);
+
+  /// Quién firma los registros (inventario, movimientos, transferencias).
+  String get actor => currentUser?.shortName ?? 'Sistema';
+
   AppUser? get simulatedUser =>
       simulatedUserId == null ? null : users.firstWhereOrNull((u) => u.id == simulatedUserId);
 
   bool allowed(AppView v) {
-    final u = simulatedUser;
+    final u = simulatedUser ?? currentUser;
     final a = v.area;
     if (u == null || a == null) return true;
     return u.can(a);
@@ -189,6 +244,25 @@ class AppState {
 
   AppView firstAllowed() =>
       AppView.values.firstWhere((v) => v != AppView.about && allowed(v), orElse: () => AppView.about);
+
+  List<Store> get activeStores => stores.where((s) => s.active).toList();
+
+  Store? storeByName(String name) => stores.firstWhereOrNull((s) => s.name == name);
+
+  Store get centralStore => stores.firstWhere((s) => s.isCentral);
+
+  /// Canastas activas del almacén central (para recibir y transferir).
+  List<String> get centralBinCodes =>
+      bins
+          .where((b) => b.storeId == centralStore.id && b.active && b.code != centralStore.receiveBin)
+          .map((b) => b.code)
+          .toList();
+
+  Map<Area, bool> presetFor(String role) =>
+      Map.of(rolePresets[role] ?? rolePreset(role));
+
+  /// Bin de recepción de una tienda (parametrizado).
+  String receiveBinOf(String store) => storeByName(store)?.receiveBin ?? receiveBinFor(store);
 
   bool orderCanConfirm(Order o) {
     final items = o.items.where((i) => i.remaining > 0).toList();
@@ -213,6 +287,82 @@ String receiveBinFor(String store) {
   return '${word.length >= 2 ? word.substring(0, 2) : word}-RX';
 }
 
+class ImportResult {
+  const ImportResult({
+    required this.lines,
+    required this.duplicates,
+    required this.skipped,
+    required this.fractional,
+    required this.receiptsCreated,
+    required this.receiptsUpdated,
+    required this.productsCreated,
+  });
+  final int lines, duplicates, skipped, fractional, receiptsCreated, receiptsUpdated, productsCreated;
+}
+
+class OrderSyncResult {
+  const OrderSyncResult({
+    this.created = 0,
+    this.updated = 0,
+    this.flagged = 0,
+    this.removed = 0,
+    this.invoiced = 0,
+    this.skipped = 0,
+    this.alreadyDispatched = 0,
+    this.productsCreated = 0,
+    this.fractional = 0,
+  });
+  final int created, updated, flagged, removed, invoiced, skipped, alreadyDispatched, productsCreated, fractional;
+
+  String get summary => [
+        '$created nueva(s)',
+        if (updated > 0) '$updated actualizada(s)',
+        if (flagged > 0) '$flagged a revisar',
+        if (removed > 0) '$removed cerrada(s) en RM',
+        if (invoiced > 0) '$invoiced facturada(s)',
+        if (alreadyDispatched > 0) '$alreadyDispatched ya despachada(s)',
+        if (skipped > 0) '$skipped línea(s) omitida(s)',
+      ].join(' · ');
+}
+
+class InvoiceSyncResult {
+  const InvoiceSyncResult({
+    this.created = 0,
+    this.linked = 0,
+    this.alreadyDispatched = 0,
+    this.duplicates = 0,
+    this.skipped = 0,
+    this.productsCreated = 0,
+    this.fractional = 0,
+    this.registerSales = 0,
+    this.voidUpdated = 0,
+    this.voidFlagged = 0,
+  });
+  final int created, linked, alreadyDispatched, duplicates, skipped, productsCreated, fractional;
+
+  /// Ventas en caja: el cliente se llevó la mercancía; no se despachan del almacén.
+  final int registerSales;
+
+  /// Facturas ya importadas con una anulación parcial posterior: ajustadas / a revisar.
+  final int voidUpdated, voidFlagged;
+
+  String get summary => [
+        '$created nueva(s)',
+        if (linked > 0) '$linked enlazada(s) a su orden',
+        if (alreadyDispatched > 0) '$alreadyDispatched ya despachada(s) como orden',
+        if (voidUpdated > 0) '$voidUpdated ajustada(s) por anulación',
+        if (voidFlagged > 0) '$voidFlagged anulada(s) en parte (revisar)',
+        if (registerSales > 0) '$registerSales venta(s) en caja (no se despachan)',
+        if (skipped > 0) '$skipped línea(s) omitida(s)',
+      ].join(' · ');
+}
+
+/// Ventas en caja (registradora): el cliente se lleva la mercancía, no pasan por despacho.
+const kRegisterSaleTransactions = kDefaultSkipTransactions;
+
+/// Reloj inyectable (las pruebas lo sustituyen).
+final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+
 final appProvider = NotifierProvider<AppNotifier, AppState>(AppNotifier.new);
 
 class AppNotifier extends Notifier<AppState> {
@@ -221,7 +371,23 @@ class AppNotifier extends Notifier<AppState> {
   final Random _rng;
 
   @override
-  AppState build() => AppState.seed();
+  AppState build() {
+    final s = AppState.seed();
+    final store = ref.read(userStoreProvider);
+    s.users
+      ..clear()
+      ..addAll(store.users);
+    s.rolePresets
+      ..clear()
+      ..addAll(store.rolePresets);
+    s.settings.autoLogoutMinutes = store.autoLogoutMinutes;
+    s.userStoreError = store.status == UserStoreStatus.broken ? store.error : null;
+    final maxId = s.users.map((u) => int.tryParse(u.id.replaceFirst('u', '')) ?? 0).fold(0, max);
+    s.userSeq = store.status == UserStoreStatus.ok ? maxId + 1 : max(s.userSeq, maxId + 1);
+    final url = ref.read(appConfigProvider).apiUrl;
+    if (url.isNotEmpty) s.centralStore.apiUrl = url;
+    return s;
+  }
 
   void _emit() => state = state.clone();
 
@@ -244,7 +410,7 @@ class AppNotifier extends Notifier<AppState> {
         productId: productId,
         qty: qty,
         doc: doc,
-        user: kCurrentUser,
+        user: state.actor,
         dateTime: kToday,
         from: from,
         to: to,
@@ -310,7 +476,7 @@ class AppNotifier extends Notifier<AppState> {
           entryDate: rec.date,
           receipt: rec.id,
           lot: 'L-${state.lotSeq++}',
-          user: kCurrentUser,
+          user: state.actor,
         ));
       }
       _log(_mv('entrada', productId, qty, rec.id, '—', '$kCentral / $bin'));
@@ -320,13 +486,437 @@ class AppNotifier extends Notifier<AppState> {
     return null;
   }
 
+  // ---------- Importación desde RM ----------
+
+  /// Trae de la API de una tienda las líneas recibidas en un rango de fechas.
+  Future<List<RmReceiptLine>> fetchReceiptLines(String storeId, DateTime from, DateTime to) async {
+    final st = state.stores.firstWhereOrNull((s) => s.id == storeId);
+    if (st == null) throw RmApiException('Tienda no encontrada.');
+    if (st.apiUrl.trim().isEmpty) {
+      throw RmApiException('${st.name} no tiene dirección API. Configúrala en Administración → Tiendas.');
+    }
+    return ref.read(rmApiFactoryProvider)(st.apiUrl).receiptsByDate(from, to);
+  }
+
+  bool isLineImported(String storeId, RmReceiptLine l) => state.importedLineIds.contains('$storeId|${l.lineId}');
+
+  /// Por qué una línea no se puede importar (null = se puede).
+  static String? skipReason(RmReceiptLine l) {
+    if (l.lineId.isEmpty || l.receiptNumber.isEmpty || l.itemCode.isEmpty) return 'datos incompletos';
+    if (l.quantityReceived.round() <= 0) return 'cantidad ${l.quantityReceived} se redondea a 0';
+    return null;
+  }
+
+  /// Importa líneas como recibos pendientes de ubicar. Es idempotente por LineID.
+  ImportResult importReceiptLines(String storeId, List<RmReceiptLine> lines) {
+    var duplicates = 0, skipped = 0, fractional = 0, imported = 0;
+    final created = <String>{}, updated = <String>{};
+    var productsCreated = 0;
+    for (final l in lines) {
+      final key = '$storeId|${l.lineId}';
+      if (skipReason(l) != null) {
+        skipped++;
+        continue;
+      }
+      if (state.importedLineIds.contains(key)) {
+        duplicates++;
+        continue;
+      }
+      final qty = l.quantityReceived.round();
+      if (qty != l.quantityReceived) fractional++;
+      final (product, isNew) = _ensureProduct(l.itemCode, l.description);
+      if (isNew) productsCreated++;
+      final rid = 'RM-${l.receiptNumber}';
+      var rec = state.receipts.firstWhereOrNull((r) => r.id == rid);
+      if (rec == null) {
+        rec = Receipt(id: rid, supplier: l.supplierName, date: l.receiptDate, items: []);
+        state.receipts.insert(0, rec);
+        created.add(rid);
+      } else if (!created.contains(rid)) {
+        updated.add(rid);
+      }
+      final item = rec.items.firstWhereOrNull((i) => i.productId == product.id);
+      if (item == null) {
+        rec.items.add(ReceiptItem(productId: product.id, qtyReceived: qty));
+      } else {
+        item.qtyReceived += qty;
+      }
+      state.importedLineIds.add(key);
+      imported++;
+    }
+    if (imported > 0) _emit();
+    return ImportResult(
+      lines: imported,
+      duplicates: duplicates,
+      skipped: skipped,
+      fractional: fractional,
+      receiptsCreated: created.length,
+      receiptsUpdated: updated.length,
+      productsCreated: productsCreated,
+    );
+  }
+
+  /// Busca el producto por código o lo crea con la descripción de RM.
+  (Product, bool) _ensureProduct(String code, String desc) {
+    final p = state.products.firstWhereOrNull((p) => p.code.toLowerCase() == code.toLowerCase());
+    if (p != null) return (p, false);
+    final n = Product(id: 'p${state.productSeq++}', code: code, desc: desc);
+    state.products.add(n);
+    return (n, true);
+  }
+
+  String _codeOf(String productId) => state.product(productId).code.toLowerCase();
+
+  /// Una orden está "tocada" si ya se piqueó algo o tiene una ruta de piqueo en curso.
+  bool orderTouched(Order o) =>
+      o.items.any((i) => i.delivered > 0) ||
+      o.items.any((i) => state.pickSessions.containsKey(orderSessionKey(o.id, i.productId)));
+
+  Order? _rmOrder(String source, String storeId, String number) => state.orders
+      .firstWhereOrNull((o) => o.source == source && o.rmStore == storeId && o.rmNumber == number);
+
+  static String? orderSkipReason(RmOrderLine l) {
+    if (l.orderNumber.isEmpty || l.itemCode.isEmpty) return 'datos incompletos';
+    if (l.isFuel) return 'combustible';
+    if (l.isService) return 'servicio';
+    if (l.pending.round() <= 0) return 'pendiente ${l.pending} se redondea a 0';
+    return null;
+  }
+
+  /// Por qué una línea de factura no entra al almacén (null = entra). La cantidad se evalúa
+  /// aparte, porque una línea anulada por completo después sigue contando para detectar el cambio.
+  static String? invoiceSkipReason(RmInvoiceLine l, {Set<int> skipTransactions = kRegisterSaleTransactions}) {
+    if (l.invoiceNumber.isEmpty || l.itemCode.isEmpty) return 'datos incompletos';
+    if (l.isReturnOrVoid) return 'devolución o anulación';
+    if (skipTransactions.contains(l.transaction)) return 'venta en caja';
+    if (l.isService) return 'servicio';
+    return null;
+  }
+
+  Store? _storeById(String id) => state.stores.firstWhereOrNull((s) => s.id == id);
+
+  RmApi _apiFor(String storeId) {
+    final st = _storeById(storeId);
+    if (st == null) throw RmApiException('Tienda no encontrada.');
+    if (st.apiUrl.trim().isEmpty) {
+      throw RmApiException('${st.name} no tiene dirección API. Configúrala en Administración → Tiendas.');
+    }
+    return ref.read(rmApiFactoryProvider)(st.apiUrl);
+  }
+
+  Future<List<RmOrderLine>> fetchOpenOrders(String storeId) => _apiFor(storeId).openOrders();
+
+  Future<List<RmInvoiceLine>> fetchInvoices(String storeId, DateTime from, DateTime to) =>
+      _apiFor(storeId).invoicesByDate(from, to);
+
+  /// Compara la foto de órdenes abiertas de RM con lo que hay en la app.
+  /// Nuevas → ORD-n; sin tocar → se actualizan; tocadas → aviso; desaparecidas → se quitan o se marcan.
+  OrderSyncResult importOpenOrders(String storeId, List<RmOrderLine> lines) {
+    final ledger = ref.read(ledgerProvider);
+    final now = ref.read(clockProvider)();
+    final storeName = _storeById(storeId)?.name ?? storeId;
+    var created = 0, updated = 0, flagged = 0, removed = 0, invoiced = 0, skipped = 0;
+    var dispatched = 0, productsCreated = 0, fractional = 0;
+
+    final groups = <String, List<RmOrderLine>>{};
+    for (final l in lines) {
+      if (orderSkipReason(l) != null) {
+        skipped++;
+        continue;
+      }
+      groups.putIfAbsent(l.orderNumber, () => []).add(l);
+    }
+
+    for (final MapEntry(key: number, value: ls) in groups.entries) {
+      // Cantidad pendiente por código de artículo.
+      final want = <String, int>{};
+      final descs = <String, String>{};
+      for (final l in ls) {
+        final q = l.pending.round();
+        if (q != l.pending) fractional++;
+        final k = l.itemCode.toLowerCase();
+        want[k] = (want[k] ?? 0) + q;
+        descs[k] = l.description;
+        descs['$k#code'] = l.itemCode;
+      }
+      List<OrderItem> buildItems(LedgerEntry? entry) => [
+            for (final MapEntry(key: k, value: q) in want.entries)
+              () {
+                final (p, isNew) = _ensureProduct(descs['$k#code']!, descs[k]!);
+                if (isNew) productsCreated++;
+                return OrderItem(productId: p.id, qty: q, delivered: min(entry?.pickedOf(k) ?? 0, q));
+              }(),
+          ];
+
+      final existing = _rmOrder(OrderSource.rmOrder, storeId, number);
+      final entry = ledger.order(storeId, number);
+      if (existing == null) {
+        final items = buildItems(entry);
+        // Tras un reinicio: si ya se piqueó todo bajo esta orden, no vuelve a entrar.
+        if (entry != null && entry.anyPicked && items.every((i) => i.remaining == 0)) {
+          dispatched++;
+          continue;
+        }
+        final id = 'ORD-$number';
+        final first = ls.first;
+        final o = Order(
+          id: id,
+          customer: first.customerName,
+          store: storeName,
+          date: first.orderDate,
+          status: items.any((i) => i.delivered > 0) ? 'parcial' : 'pendiente',
+          items: items,
+          source: OrderSource.rmOrder,
+          rmStore: storeId,
+          rmNumber: number,
+          invoices: [...?entry?.invoices],
+        );
+        if (entry != null && entry.appId.startsWith('FAC-')) {
+          // Su factura entró antes que la orden (se facturó entre dos sincronizaciones):
+          // no se adivina qué parte ya va en la factura; se pide revisión.
+          o.syncNote = 'Revisar antes de piquear: la factura ${entry.appId} de esta orden ya se importó; '
+              'confirma que no se despache dos veces';
+        } else if (o.invoices.isNotEmpty) {
+          o.syncNote = 'Facturada en RM · FAC ${o.invoices.join(', ')}';
+        }
+        state.orders.insert(0, o);
+        ledger.recordOrder(storeId, number, id, now);
+        created++;
+        continue;
+      }
+
+      final have = {for (final i in existing.items) _codeOf(i.productId): i.qty};
+      final same = have.length == want.length && want.entries.every((e) => have[e.key] == e.value);
+      if (same) continue;
+      if (!orderTouched(existing) && existing.invoices.isEmpty) {
+        existing.items
+          ..clear()
+          ..addAll(buildItems(null));
+        existing.syncNote = null;
+        updated++;
+      } else {
+        final changes = [
+          for (final k in {...have.keys, ...want.keys})
+            if (have[k] != want[k]) '${descs['$k#code'] ?? k}: ${have[k] ?? 0} → ${want[k] ?? 0}',
+        ];
+        existing.syncNote = 'Cambió en RM (revisar): ${changes.join('; ')}';
+        flagged++;
+      }
+    }
+
+    // Órdenes que ya no están abiertas en RM.
+    for (final o in state.orders
+        .where((o) => o.source == OrderSource.rmOrder && o.rmStore == storeId && o.isOpen && !groups.containsKey(o.rmNumber))
+        .toList()) {
+      if (o.invoices.isNotEmpty) {
+        o.syncNote = 'Facturada en RM · FAC ${o.invoices.join(', ')}';
+        invoiced++;
+      } else if (!orderTouched(o)) {
+        state.orders.remove(o);
+        removed++;
+      } else {
+        o.syncNote = 'Cerrada en RM (revisar): ya no está abierta, pero se empezó a piquear';
+        flagged++;
+      }
+    }
+
+    ledger.save();
+    _emit();
+    return OrderSyncResult(
+      created: created,
+      updated: updated,
+      flagged: flagged,
+      removed: removed,
+      invoiced: invoiced,
+      skipped: skipped,
+      alreadyDispatched: dispatched,
+      productsCreated: productsCreated,
+      fractional: fractional,
+    );
+  }
+
+  /// Importa facturas de venta como FAC-n. Una factura que viene de una orden ya importada
+  /// NO se vuelve a despachar: se enlaza a la orden y solo entra lo que excede lo ordenado
+  /// (o, tras un reinicio, lo que no se piqueó bajo la orden).
+  InvoiceSyncResult importInvoices(String storeId, List<RmInvoiceLine> lines,
+      {Set<int> skipTransactions = kRegisterSaleTransactions}) {
+    final ledger = ref.read(ledgerProvider);
+    final now = ref.read(clockProvider)();
+    final storeName = _storeById(storeId)?.name ?? storeId;
+    var created = 0, linked = 0, dispatched = 0, duplicates = 0, skipped = 0, productsCreated = 0, fractional = 0;
+    var voidUpdated = 0, voidFlagged = 0;
+
+    final groups = <String, List<RmInvoiceLine>>{};
+    final registerInvoices = <String>{};
+    for (final l in lines) {
+      final why = invoiceSkipReason(l, skipTransactions: skipTransactions);
+      if (why == 'venta en caja') {
+        registerInvoices.add(l.invoiceNumber);
+        continue;
+      }
+      if (why != null) {
+        skipped++;
+        continue;
+      }
+      groups.putIfAbsent(l.invoiceNumber, () => []).add(l);
+    }
+
+    for (final MapEntry(key: number, value: ls) in groups.entries) {
+      // Cantidad a despachar por artículo: vendido − anulado.
+      final qty = <String, int>{};
+      final descs = <String, String>{};
+      for (final l in ls) {
+        final q = l.toShip.round();
+        if (q != l.toShip) fractional++;
+        final k = l.itemCode.toLowerCase();
+        qty[k] = (qty[k] ?? 0) + (q > 0 ? q : 0);
+        descs[k] = l.description;
+        descs['$k#code'] = l.itemCode;
+      }
+
+      final invEntry = ledger.invoice(storeId, number);
+      final existingFac = _rmOrder(OrderSource.rmInvoice, storeId, number);
+      final alreadyHere =
+          existingFac != null || (invEntry != null && state.orders.any((o) => o.id == invEntry.appId));
+      if (alreadyHere) {
+        // Anulación parcial posterior en RM (VoidParcial): se ajusta si aún no se piquea.
+        if (existingFac != null && existingFac.isOpen) {
+          final have = {for (final i in existingFac.items) _codeOf(i.productId): i.qty};
+          final changed = have.entries.where((e) => e.value > (qty[e.key] ?? 0)).toList();
+          if (changed.isNotEmpty) {
+            if (!orderTouched(existingFac)) {
+              for (final i in existingFac.items) {
+                i.qty = min(i.qty, qty[_codeOf(i.productId)] ?? 0);
+              }
+              existingFac.items.removeWhere((i) => i.qty <= 0);
+              existingFac.syncNote = 'Anulada en parte en RM: se ajustó la cantidad';
+              if (existingFac.items.isEmpty) state.orders.remove(existingFac);
+              voidUpdated++;
+            } else {
+              final detail = [
+                for (final e in changed) '${descs['${e.key}#code'] ?? e.key}: ${e.value} → ${qty[e.key] ?? 0}',
+              ].join('; ');
+              existingFac.syncNote = 'Anulada en parte en RM (revisar): $detail';
+              voidFlagged++;
+            }
+            continue;
+          }
+        }
+        duplicates++;
+        continue;
+      }
+      if (qty.values.every((q) => q <= 0)) {
+        skipped += ls.length; // anulada por completo antes de importarla
+        continue;
+      }
+
+      final orderNumber = ls.first.orderNumber;
+      final ordEntry = orderNumber.isEmpty ? null : ledger.order(storeId, orderNumber);
+      final toDispatch = Map.of(qty);
+      String? note;
+      var appId = 'FAC-$number';
+
+      if (ordEntry != null) {
+        ordEntry.invoices.add(number);
+        final order = _rmOrder(OrderSource.rmOrder, storeId, orderNumber);
+        if (order != null) {
+          // La orden sigue en la app: ella despacha lo facturado; solo entra lo adicional.
+          if (!order.invoices.contains(number)) order.invoices.add(number);
+          order.syncNote = 'Facturada en RM · FAC ${order.invoices.join(', ')}';
+          final ordered = {for (final i in order.items) _codeOf(i.productId): i.qty};
+          for (final k in qty.keys) {
+            toDispatch[k] = qty[k]! - (ordered[k] ?? 0);
+          }
+          note = 'Adicional a ${order.id}';
+          appId = order.id;
+          linked++;
+        } else {
+          // La orden ya no está en la app (reinicio o cerrada): descontar lo ya piqueado bajo ella.
+          for (final k in qty.keys) {
+            toDispatch[k] = qty[k]! - ordEntry.pickedOf(k);
+          }
+          if (ordEntry.anyPicked) note = 'Resto de ${ordEntry.appId}';
+        }
+      }
+      // Factura ya piqueada en parte antes de un reinicio.
+      if (invEntry != null) {
+        for (final k in qty.keys) {
+          toDispatch[k] = toDispatch[k]! - invEntry.pickedOf(k);
+        }
+      }
+
+      final items = <OrderItem>[];
+      for (final MapEntry(key: k, value: q) in toDispatch.entries) {
+        if (q <= 0) continue;
+        final (p, isNew) = _ensureProduct(descs['$k#code']!, descs[k]!);
+        if (isNew) productsCreated++;
+        items.add(OrderItem(productId: p.id, qty: q));
+      }
+
+      if (items.isEmpty) {
+        if (ordEntry != null && appId.startsWith('FAC-')) dispatched++;
+        ledger.recordInvoice(storeId, number, appId, now);
+        continue;
+      }
+      final first = ls.first;
+      state.orders.insert(
+        0,
+        Order(
+          id: 'FAC-$number',
+          customer: first.customerName,
+          store: storeName,
+          date: first.invoiceDate,
+          status: 'pendiente',
+          items: items,
+          source: OrderSource.rmInvoice,
+          rmStore: storeId,
+          rmNumber: number,
+          syncNote: note,
+        ),
+      );
+      ledger.recordInvoice(storeId, number, 'FAC-$number', now);
+      // Factura de una orden que aún no conocíamos: se anota para no traer la orden después sin aviso.
+      if (orderNumber.isNotEmpty && ordEntry == null) {
+        ledger.recordOrder(storeId, orderNumber, 'FAC-$number', now).invoices.add(number);
+      }
+      created++;
+    }
+
+    ledger.save();
+    _emit();
+    return InvoiceSyncResult(
+      created: created,
+      linked: linked,
+      alreadyDispatched: dispatched,
+      duplicates: duplicates,
+      skipped: skipped,
+      productsCreated: productsCreated,
+      fractional: fractional,
+      registerSales: registerInvoices.length,
+      voidUpdated: voidUpdated,
+      voidFlagged: voidFlagged,
+    );
+  }
+
+  /// Anota en el libro de despachos lo piqueado de una orden o factura de RM.
+  void _recordPicked(Order o, String productId, int qty) {
+    if (!o.isRm || o.rmStore == null || o.rmNumber == null || qty <= 0) return;
+    final ledger = ref.read(ledgerProvider);
+    final now = ref.read(clockProvider)();
+    final entry = o.source == OrderSource.rmOrder
+        ? ledger.order(o.rmStore!, o.rmNumber!) ?? ledger.recordOrder(o.rmStore!, o.rmNumber!, o.id, now)
+        : ledger.invoice(o.rmStore!, o.rmNumber!) ?? ledger.recordInvoice(o.rmStore!, o.rmNumber!, o.id, now);
+    ledger.addPicked(entry, _codeOf(productId), qty);
+  }
+
   // ---------- Órdenes entrantes ----------
 
   String simulateOrder() {
     final id = 'OV-${state.orderSeq++}';
     final ids = state.products.map((p) => p.id).toList()..shuffle(_rng);
     final n = 2 + _rng.nextInt(2);
-    final stores = kStores.where((s) => s != kCentral).toList();
+    final stores = state.activeStores.where((s) => !s.isCentral).map((s) => s.name).toList();
+    if (stores.isEmpty) stores.add(kCentral);
     state.orders.insert(
       0,
       Order(
@@ -388,14 +978,16 @@ class AppNotifier extends Notifier<AppState> {
         state.inventory,
         docLabel: o.id,
         dispatchLabel: o.store,
-        user: kCurrentUser,
+        user: state.actor,
         now: kToday,
         nextMovementId: _mvId,
       );
       _logAll(res.movements);
       i.delivered += res.delivered;
+      _recordPicked(o, i.productId, res.delivered);
       state.pickSessions.remove(key);
     }
+    if (o.isRm) ref.read(ledgerProvider).save();
     final partial = o.items.any((i) => i.remaining > 0);
     o.status = partial ? 'parcial' : 'completada';
     _emit();
@@ -429,7 +1021,7 @@ class AppNotifier extends Notifier<AppState> {
       state.inventory,
       docLabel: s.doc,
       dispatchLabel: 'Despacho',
-      user: kCurrentUser,
+      user: state.actor,
       now: kToday,
       nextMovementId: _mvId,
     );
@@ -510,7 +1102,7 @@ class AppNotifier extends Notifier<AppState> {
         qty: qty,
         from: src.bin,
         to: destBin,
-        user: kCurrentUser,
+        user: state.actor,
         dateTime: kToday,
         obs: note,
       ),
@@ -568,12 +1160,12 @@ class AppNotifier extends Notifier<AppState> {
       id: _invId(),
       productId: t.productId,
       store: t.toStore,
-      bin: receiveBinFor(t.toStore),
+      bin: state.receiveBinOf(t.toStore),
       qty: t.qty,
       entryDate: kToday,
       receipt: t.id,
       lot: '—',
-      user: kCurrentUser,
+      user: state.actor,
     ));
     _log(_mv('transfer-store-in', t.productId, t.qty, t.id, t.fromStore, t.toStore));
     t.status = 'recibido';
@@ -600,6 +1192,111 @@ class AppNotifier extends Notifier<AppState> {
   /// Marca el prefill como consumido (sin reconstruir).
   void consumePrefill() => state.transferPrefill = null;
 
+  // ---------- Sesión (PIN) ----------
+
+  int _failedPins = 0;
+  DateTime? _lockedUntil;
+  static const maxPinAttempts = 5;
+  static const lockDuration = Duration(seconds: 30);
+
+  /// Segundos que faltan para poder intentar de nuevo (0 = no bloqueado).
+  int lockSecondsLeft() {
+    final until = _lockedUntil;
+    if (until == null) return 0;
+    final left = until.difference(ref.read(clockProvider)()).inMilliseconds;
+    return left <= 0 ? 0 : (left / 1000).ceil();
+  }
+
+  void _audit(String event, String user) =>
+      ref.read(auditProvider).add(AuditEvent(ref.read(clockProvider)(), event, user));
+
+  /// Inicia sesión con un PIN de 4 dígitos. Devuelve el mensaje de error o null.
+  String? login(String pin) {
+    if (state.userStoreError != null) return 'No se pudieron leer los usuarios. Avisa al administrador.';
+    if (lockSecondsLeft() > 0) return 'Demasiados intentos. Espera ${lockSecondsLeft()} s.';
+    if (!isValidPin(pin)) return 'El PIN tiene 4 dígitos.';
+    final match = state.users.firstWhereOrNull((u) => u.checkPin(pin));
+    if (match == null || !match.active) {
+      _failedPins++;
+      _audit(match == null ? 'PIN incorrecto' : 'usuario inactivo', match?.name ?? '—');
+      if (_failedPins >= maxPinAttempts) {
+        _failedPins = 0;
+        _lockedUntil = ref.read(clockProvider)().add(lockDuration);
+        _audit('bloqueo ${lockDuration.inSeconds} s', '—');
+        _emit();
+        return 'Demasiados intentos. Espera ${lockDuration.inSeconds} s.';
+      }
+      _emit();
+      return match == null ? 'PIN incorrecto' : 'Usuario inactivo. Avisa al administrador.';
+    }
+    _failedPins = 0;
+    _lockedUntil = null;
+    state.currentUserId = match.id;
+    state.simulatedUserId = null;
+    state.logoutReason = null;
+    _audit('inicio de sesión', match.name);
+    _ensureViewAllowed();
+    _emit();
+    return null;
+  }
+
+  void logout({String? reason}) {
+    final u = state.currentUser;
+    if (u == null) return;
+    _audit(reason == null ? 'cierre de sesión' : 'cierre de sesión ($reason)', u.name);
+    state.currentUserId = null;
+    state.simulatedUserId = null;
+    state.logoutReason = reason == null ? null : 'Sesión cerrada por $reason.';
+    _emit();
+  }
+
+  void _saveUsers() {
+    try {
+      UserStoreData.save(
+        ref.read(userStoreFileProvider),
+        users: state.users,
+        rolePresets: state.rolePresets,
+        autoLogoutMinutes: state.settings.autoLogoutMinutes,
+      );
+    } catch (_) {
+      // Sin permiso de escritura: el cambio queda en memoria; el instalador da permiso a la carpeta.
+    }
+  }
+
+  /// Administradores activos que pueden iniciar sesión.
+  bool _isLastLoginAdmin(String id) {
+    final admins = state.users.where((u) => u.active && u.can(Area.users) && u.hasPin).toList();
+    return admins.length == 1 && admins.first.id == id;
+  }
+
+  /// Asigna o cambia el PIN. Devuelve el error o null.
+  String? setPin(String userId, String pin) {
+    final u = state.users.firstWhereOrNull((x) => x.id == userId);
+    if (u == null) return 'Usuario no encontrado.';
+    if (!isValidPin(pin)) return 'El PIN debe tener exactamente 4 dígitos.';
+    if (state.users.any((x) => x.id != userId && x.checkPin(pin))) return 'Ese PIN ya lo usa otro empleado.';
+    u.setPin(pin);
+    _saveUsers();
+    _emit();
+    return null;
+  }
+
+  String? clearPin(String userId) {
+    final u = state.users.firstWhereOrNull((x) => x.id == userId);
+    if (u == null) return 'Usuario no encontrado.';
+    if (_isLastLoginAdmin(userId)) return 'Debe quedar al menos un administrador activo con PIN.';
+    u.clearPin();
+    _saveUsers();
+    _emit();
+    return null;
+  }
+
+  void setAutoLogoutMinutes(int minutes) {
+    state.settings.autoLogoutMinutes = minutes.clamp(0, 600);
+    _saveUsers();
+    _emit();
+  }
+
   // ---------- Usuarios y permisos ----------
 
   String addUser() {
@@ -610,8 +1307,9 @@ class AppNotifier extends Notifier<AppState> {
       email: '',
       role: 'Piqueador',
       active: true,
-      perms: rolePreset('Piqueador'),
+      perms: state.presetFor('Piqueador'),
     ));
+    _saveUsers();
     _emit();
     return id;
   }
@@ -622,8 +1320,9 @@ class AppNotifier extends Notifier<AppState> {
     if (name != null) u.name = name;
     if (email != null) u.email = email;
     if (role != null) u.role = role;
-    if (active != null) u.active = active;
+    if (active != null && !(active == false && _isLastAdmin(id))) u.active = active;
     if (state.simulatedUserId == id && !u.active) state.simulatedUserId = null;
+    _saveUsers();
     _ensureViewAllowed();
     _emit();
   }
@@ -631,7 +1330,8 @@ class AppNotifier extends Notifier<AppState> {
   void applyRolePreset(String id) {
     final u = state.users.firstWhereOrNull((x) => x.id == id);
     if (u == null) return;
-    u.perms = rolePreset(u.role);
+    u.perms = state.presetFor(u.role);
+    _saveUsers();
     _ensureViewAllowed();
     _emit();
   }
@@ -639,14 +1339,27 @@ class AppNotifier extends Notifier<AppState> {
   void setPerm(String id, Area area, bool value) {
     final u = state.users.firstWhereOrNull((x) => x.id == id);
     if (u == null) return;
+    if (!value && area == Area.users && _isLastAdmin(id)) return;
     u.perms = {...u.perms, area: value};
+    _saveUsers();
     _ensureViewAllowed();
     _emit();
   }
 
+  /// true si `id` es el único usuario activo con acceso a Administración.
+  bool _isLastAdmin(String id) {
+    final admins = state.users.where((u) => u.active && u.can(Area.users)).toList();
+    return (admins.length == 1 && admins.first.id == id) || _isLastLoginAdmin(id);
+  }
+
+  bool isLastAdmin(String id) => _isLastAdmin(id);
+
   void deleteUser(String id) {
+    if (_isLastAdmin(id)) return;
+    if (state.currentUserId == id) return;
     state.users.removeWhere((u) => u.id == id);
     if (state.simulatedUserId == id) state.simulatedUserId = null;
+    _saveUsers();
     _ensureViewAllowed();
     _emit();
   }
@@ -662,5 +1375,197 @@ class AppNotifier extends Notifier<AppState> {
   void exitSimulation() {
     state.simulatedUserId = null;
     _emit();
+  }
+
+  // ---------- Administración: tiendas ----------
+
+  bool _hasStoreHistory(Store st) =>
+      state.inventory.any((r) => r.store == st.name) ||
+      state.orders.any((o) => o.store == st.name) ||
+      state.storeTransfers.any((t) => t.fromStore == st.name || t.toStore == st.name);
+
+  bool storeHasHistory(String id) {
+    final st = state.stores.firstWhereOrNull((s) => s.id == id);
+    return st != null && _hasStoreHistory(st);
+  }
+
+  static final _urlRe = RegExp(r'^https?://[^\s/$.?#][^\s]*$', caseSensitive: false);
+
+  /// Crea una tienda vacía lista para editar. Devuelve su id.
+  String addStore() {
+    var n = state.stores.length;
+    var code = 'T$n';
+    while (state.stores.any((s) => s.code == code)) {
+      n++;
+      code = 'T$n';
+    }
+    final id = 's${state.storeSeq++}';
+    state.stores.add(Store(id: id, name: 'Nueva tienda $code', code: code, receiveBin: '$code-RX'));
+    state.bins.add(Bin(id: 'b-$code-RX', storeId: id, code: '$code-RX', zone: 'Recepción', special: true));
+    _emit();
+    return id;
+  }
+
+  /// Actualiza una tienda. Devuelve un mensaje de error o null.
+  String? updateStore(String id, {String? name, String? code, String? apiUrl, String? apiKey, bool? active}) {
+    final st = state.stores.firstWhereOrNull((s) => s.id == id);
+    if (st == null) return 'Tienda no encontrada.';
+    if (name != null && name != st.name) {
+      if (st.isCentral) return 'El nombre del almacén central no se puede cambiar.';
+      if (name.trim().isEmpty) return 'El nombre es obligatorio.';
+      if (_hasStoreHistory(st)) {
+        return 'No se puede renombrar: la tienda tiene inventario o movimientos. Desactívala y crea otra.';
+      }
+      if (state.stores.any((s) => s.id != id && s.name == name.trim())) {
+        return 'Ya existe una tienda con ese nombre.';
+      }
+      st.name = name.trim();
+    }
+    if (code != null && code != st.code) {
+      final c = code.trim().toUpperCase();
+      if (c.isEmpty) return 'El código es obligatorio.';
+      if (state.stores.any((s) => s.id != id && s.code == c)) return 'Ya existe una tienda con ese código.';
+      st.code = c;
+    }
+    if (apiKey != null) st.apiKey = apiKey;
+    String? err;
+    if (apiUrl != null) {
+      st.apiUrl = apiUrl;
+      final u = apiUrl.trim();
+      if (u.isNotEmpty && !_urlRe.hasMatch(u)) err = 'La dirección API debe comenzar con http:// o https://';
+    }
+    if (active != null) {
+      if (!active && st.isCentral) return 'El almacén central no se puede desactivar.';
+      st.active = active;
+    }
+    _emit();
+    return err;
+  }
+
+  String? deleteStore(String id) {
+    final st = state.stores.firstWhereOrNull((s) => s.id == id);
+    if (st == null) return null;
+    if (st.isCentral) return 'El almacén central no se puede eliminar.';
+    if (_hasStoreHistory(st)) return 'Tiene inventario o movimientos. Desactívala en su lugar.';
+    state.stores.remove(st);
+    state.bins.removeWhere((b) => b.storeId == id);
+    _emit();
+    return null;
+  }
+
+  /// Prueba la conexión real (HealthCheck) con la API de la tienda.
+  Future<String> testStoreConnection(String id) async {
+    final st = state.stores.firstWhereOrNull((s) => s.id == id);
+    if (st == null) return 'Tienda no encontrada.';
+    final u = st.apiUrl.trim();
+    String res;
+    if (u.isEmpty) {
+      res = 'Sin dirección API configurada.';
+    } else if (!_urlRe.hasMatch(u)) {
+      res = 'Dirección inválida.';
+    } else {
+      try {
+        res = await ref.read(rmApiFactoryProvider)(u).healthCheck();
+      } on RmApiException catch (e) {
+        res = e.message;
+      }
+    }
+    st.lastCheck = res;
+    _emit();
+    return res;
+  }
+
+  // ---------- Administración: canastas ----------
+
+  /// Agrega una canasta a un almacén. Devuelve error o null.
+  String? addBin(String storeId, String code, {String zone = '', int? capacity}) {
+    final c = code.trim().toUpperCase();
+    if (c.isEmpty) return 'Ingresa el código de la canasta.';
+    if (state.bins.any((b) => b.storeId == storeId && b.code == c)) {
+      return 'La canasta $c ya existe en este almacén.';
+    }
+    state.bins.add(Bin(
+      id: 'bn-${state.binSeq++}',
+      storeId: storeId,
+      code: c,
+      zone: zone.trim(),
+      capacity: capacity,
+    ));
+    _emit();
+    return null;
+  }
+
+  bool binHasStock(Bin b) {
+    final st = state.stores.firstWhereOrNull((s) => s.id == b.storeId);
+    if (st == null) return false;
+    return state.inventory.any((r) => r.store == st.name && r.bin == b.code && r.qty > 0);
+  }
+
+  String? updateBin(String id,
+      {String? code, String? zone, int? capacity, bool clearCapacity = false, bool? active}) {
+    final b = state.bins.firstWhereOrNull((x) => x.id == id);
+    if (b == null) return 'Canasta no encontrada.';
+    if (code != null && code.trim().toUpperCase() != b.code) {
+      final c = code.trim().toUpperCase();
+      if (b.special) return 'Esta canasta es de recepción y no se puede renombrar.';
+      if (c.isEmpty) return 'El código es obligatorio.';
+      if (state.bins.any((x) => x.id != id && x.storeId == b.storeId && x.code == c)) {
+        return 'La canasta $c ya existe en este almacén.';
+      }
+      if (binHasStock(b)) return 'Tiene inventario; muévelo antes de renombrar.';
+      b.code = c;
+    }
+    if (zone != null) b.zone = zone;
+    if (clearCapacity) b.capacity = null;
+    if (capacity != null) b.capacity = capacity;
+    if (active != null) {
+      if (!active && b.special) return 'Las canastas de recepción no se pueden desactivar.';
+      if (!active && binHasStock(b)) return 'Tiene inventario; muévelo antes de desactivar.';
+      b.active = active;
+    }
+    _emit();
+    return null;
+  }
+
+  String? deleteBin(String id) {
+    final b = state.bins.firstWhereOrNull((x) => x.id == id);
+    if (b == null) return null;
+    if (b.special) return 'Las canastas de recepción no se pueden eliminar.';
+    if (binHasStock(b)) return 'Tiene inventario; muévelo antes de eliminar.';
+    state.bins.remove(b);
+    _emit();
+    return null;
+  }
+
+  // ---------- Administración: roles y parámetros ----------
+
+  void setRolePerm(String role, Area area, bool value) {
+    if (role == 'Administrador' && area == Area.users) return;
+    final cur = state.presetFor(role);
+    cur[area] = value;
+    state.rolePresets[role] = cur;
+    _saveUsers();
+    _emit();
+  }
+
+  void resetRolePreset(String role) {
+    state.rolePresets[role] = rolePreset(role);
+    _saveUsers();
+    _emit();
+  }
+
+  /// Valida y guarda parámetros. Devuelve error o null.
+  String? updateSettings({int? ageAlertDays, int? staleDays, String? companyName, String? warehouseName}) {
+    final age = ageAlertDays ?? state.settings.ageAlertDays;
+    final stale = staleDays ?? state.settings.staleDays;
+    if (age < 1 || stale < 1) return 'Los días deben ser mayores que 0.';
+    if (age >= stale) return 'La alerta de antigüedad debe ser menor que el umbral sin movimiento.';
+    final s = state.settings;
+    s.ageAlertDays = age;
+    s.staleDays = stale;
+    if (companyName != null) s.companyName = companyName;
+    if (warehouseName != null) s.warehouseName = warehouseName;
+    _emit();
+    return null;
   }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/seed.dart';
 import '../../models/tone.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
@@ -38,7 +37,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       final oldest = bins.isEmpty ? 0 : ageDays(bins.first.entryDate);
       final (estado, tone) = total == 0
           ? ('Agotado', Tone.crit)
-          : oldest >= kAgeAlertDays
+          : oldest >= s.settings.ageAlertDays
               ? ('Rotar pronto', Tone.warn)
               : ('Normal', Tone.good);
       final open = _expanded.contains(p.id);
@@ -87,7 +86,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             label: 'Alertas de antigüedad',
             value: '${s.ageAlerts}',
             tone: s.ageAlerts > 0 ? Tone.crit : Tone.good,
-            hint: 'bins con ≥ $kAgeAlertDays días',
+            hint: 'bins con ≥ ${s.settings.ageAlertDays} días',
           ),
         ]),
         const SizedBox(height: 20),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/seed.dart';
 import '../../models/receipt.dart';
 import '../../models/tone.dart';
 import '../../state/app_state.dart';
@@ -13,6 +12,7 @@ import '../../widgets/common.dart';
 import '../../widgets/expandable_card.dart';
 import '../../widgets/pick_step_row.dart';
 import '../../widgets/toast.dart';
+import 'import_dialog.dart';
 
 class ReceivingScreen extends ConsumerStatefulWidget {
   const ReceivingScreen({super.key});
@@ -44,7 +44,10 @@ class _ReceivingScreenState extends ConsumerState<ReceivingScreen> {
           title: 'Recibido sin ubicar',
           subtitle:
               'Mercancía recibida que todavía no tiene localización. Asígnala a una o varias canastas (bins) para que quede disponible para el piqueo FIFO.',
-          actions: [FilledButton(onPressed: _simulate, child: const Text('+ Simular recibo entrante'))],
+          actions: [
+            FilledButton(onPressed: () => showImportReceiptsDialog(context), child: const Text('Importar desde RM')),
+            OutlinedButton(onPressed: _simulate, child: const Text('+ Simular recibo entrante')),
+          ],
         ),
         const FlowSteps(steps: [
           ('Recibe la mercancía', 'El recibo entra con la cantidad recibida y queda pendiente de ubicar.'),
@@ -193,7 +196,7 @@ class _AllocationPanel extends ConsumerStatefulWidget {
 }
 
 class _AllocationPanelState extends ConsumerState<_AllocationPanel> {
-  late final List<_AllocRow> _rows = [_AllocRow(kAllBins.first, widget.pending)];
+  late final List<_AllocRow> _rows = [_AllocRow(ref.read(appProvider).centralBinCodes.first, widget.pending)];
 
   @override
   void dispose() {
@@ -207,7 +210,8 @@ class _AllocationPanelState extends ConsumerState<_AllocationPanel> {
 
   void _add() {
     final used = _rows.map((r) => r.bin).toSet();
-    final next = kAllBins.firstWhere((b) => !used.contains(b), orElse: () => kAllBins.first);
+    final bins = ref.read(appProvider).centralBinCodes;
+    final next = bins.firstWhere((b) => !used.contains(b), orElse: () => bins.first);
     final remaining = widget.pending - _sum;
     setState(() => _rows.add(_AllocRow(next, remaining > 0 ? remaining : 0)));
   }
@@ -259,7 +263,7 @@ class _AllocationPanelState extends ConsumerState<_AllocationPanel> {
                     child: AppDropdown<String>(
                       value: _rows[i].bin,
                       mono: true,
-                      items: [for (final b in kAllBins) ddItem(context, b, b, mono: true)],
+                      items: [for (final b in {...ref.watch(appProvider).centralBinCodes, _rows[i].bin}) ddItem(context, b, b, mono: true)],
                       onChanged: (v) => setState(() => _rows[i].bin = v ?? _rows[i].bin),
                     ),
                   ),

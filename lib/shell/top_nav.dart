@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../auth/session_widgets.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
@@ -31,6 +32,8 @@ class TopNav extends ConsumerWidget {
                 const AppLogo(height: 46),
                 const Spacer(),
                 const ThemeToggle(compact: true),
+                const SizedBox(width: 10),
+                const SessionPanel(compact: true),
               ],
             ),
           ),

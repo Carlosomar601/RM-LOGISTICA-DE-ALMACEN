@@ -2,6 +2,8 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/audit_log.dart';
+import '../../auth/session_widgets.dart';
 import '../../models/app_user.dart';
 import '../../models/tone.dart';
 import '../../state/app_state.dart';
@@ -44,12 +46,11 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ScreenHeader(
-          eyebrow: 'Administración',
-          title: 'Usuarios y permisos',
-          subtitle: 'Define quién puede ver y operar cada sección del sistema. Los roles traen permisos por defecto que puedes ajustar.',
-          actions: [FilledButton(onPressed: _newUser, child: const Text('+ Nuevo usuario'))],
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton(onPressed: _newUser, child: const Text('+ Nuevo usuario')),
         ),
+        const SizedBox(height: 12),
         SectionCard(
           title: 'Vista previa de acceso',
           subtitle: 'Simula cómo ve el dashboard un usuario: solo quedan disponibles las secciones permitidas para su rol.',
@@ -93,7 +94,48 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
               onClose: () => setState(() => _expanded.remove(u.id)),
             ),
           ),
+        const SizedBox(height: 8),
+        const _SessionActivity(),
       ],
+    );
+  }
+}
+
+/// Últimos inicios y cierres de sesión (también en audit.log, en la carpeta compartida).
+class _SessionActivity extends ConsumerWidget {
+  const _SessionActivity();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appProvider); // se refresca con cada inicio/cierre
+    final events = ref.read(auditProvider).recent;
+    final c = context.c;
+    return SectionCard(
+      title: 'Actividad de sesiones',
+      subtitle: 'Inicios y cierres de sesión, PIN incorrectos y bloqueos (últimos 50).',
+      child: events.isEmpty
+          ? Text('Sin actividad todavía.', style: T.muted(context, size: 13))
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final AuditEvent e in events)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Wrap(
+                      spacing: 10,
+                      children: [
+                        Text(fmtDateTime(e.at), style: T.mono(context, size: 12, color: c.inkMuted)),
+                        Text(e.event,
+                            style: T.body(context,
+                                size: 12.5,
+                                weight: FontWeight.w600,
+                                color: e.event.startsWith('PIN') || e.event.startsWith('bloqueo') ? c.crit : null)),
+                        Text(e.user, style: T.body(context, size: 12.5)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 }
@@ -135,6 +177,7 @@ class _UserCard extends ConsumerWidget {
         children: [
           AppBadge(u.role, tone: Tone.accent),
           u.active ? const AppBadge('Activo', tone: Tone.good) : const AppBadge('Inactivo', tone: Tone.neutral),
+          if (!u.hasPin) const AppBadge('Sin PIN', tone: Tone.warn),
         ],
       ),
       extra: Wrap(
@@ -291,6 +334,35 @@ class _UserEditorState extends ConsumerState<_UserEditor> {
           );
         }),
         const SizedBox(height: 18),
+        Text('PIN DE ACCESO', style: T.th(context)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              u.hasPin ? 'Tiene PIN: puede iniciar sesión.' : 'Sin PIN: no puede iniciar sesión.',
+              style: T.body(context, size: 13, color: u.hasPin ? c.good : c.warn),
+            ),
+            FilledButton(
+              style: compactFilled(),
+              onPressed: () => showPinDialog(context, ref,
+                  userId: u.id, title: u.hasPin ? 'Cambiar PIN de ${u.name}' : 'Asignar PIN a ${u.name}'),
+              child: Text(u.hasPin ? 'Cambiar PIN' : 'Asignar PIN'),
+            ),
+            if (u.hasPin)
+              OutlinedButton(
+                style: compactOutlined(),
+                onPressed: () {
+                  final err = n.clearPin(u.id);
+                  showToast(ref, err ?? 'PIN de ${u.name} eliminado');
+                },
+                child: const Text('Quitar PIN'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 18),
         Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -299,6 +371,10 @@ class _UserEditorState extends ConsumerState<_UserEditor> {
               style: OutlinedButton.styleFrom(foregroundColor: c.crit, side: BorderSide(color: c.crit.withValues(alpha: 0.5))),
               onPressed: () {
                 final name = u.name;
+                if (n.isLastAdmin(u.id)) {
+                  showToast(ref, 'No se puede eliminar al único administrador activo.');
+                  return;
+                }
                 n.deleteUser(u.id);
                 showToast(ref, 'Usuario $name eliminado');
               },

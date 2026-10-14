@@ -1,0 +1,14 @@
+<Configuration>
+  <!-- Prueba sin red: Windows limpio, sin internet ni runtime de Visual C++. -->
+  <Networking>Disable</Networking>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>D:\PROGRAMACION CARLOS OMAR\Logistica de almacen\v2\installer\Output</HostFolder>
+      <SandboxFolder>C:\Instalador</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>cmd /c start "" C:\Instalador\PiqueoFIFO-Setup-1.0.0.exe</Command>
+  </LogonCommand>
+</Configuration>

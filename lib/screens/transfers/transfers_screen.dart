@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/seed.dart';
 import '../../models/tone.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
@@ -30,14 +29,33 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
   // Entre bins
   String _binProduct = 'p1';
   String? _srcRowId;
-  String _destBin = 'C-01-01';
+  String? _destBinSel;
   final _binQty = TextEditingController(text: '10');
   final _obs = TextEditingController();
 
   // Entre tiendas
   String _stProduct = 'p1';
-  String _fromStore = kStores[0];
-  String _toStore = kStores[1];
+  String? _fromSel;
+  String? _toSel;
+
+  List<String> get _storeNames => ref.read(appProvider).activeStores.map((s) => s.name).toList();
+
+  String get _destBin {
+    final bins = ref.read(appProvider).centralBinCodes;
+    if (_destBinSel != null && bins.contains(_destBinSel)) return _destBinSel!;
+    return bins.contains('C-01-01') ? 'C-01-01' : bins.first;
+  }
+
+  String get _fromStore {
+    final n = _storeNames;
+    return _fromSel != null && n.contains(_fromSel) ? _fromSel! : n.first;
+  }
+
+  String get _toStore {
+    final n = _storeNames;
+    if (_toSel != null && n.contains(_toSel)) return _toSel!;
+    return n.firstWhere((x) => x != _fromStore, orElse: () => n.first);
+  }
   final _stQty = TextEditingController(text: '8');
 
   @override
@@ -64,8 +82,8 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
 
   void _applyPrefill(StoreTransferPrefill p) {
     _stProduct = p.productId;
-    _fromStore = p.fromStore;
-    _toStore = p.toStore;
+    _fromSel = p.fromStore;
+    _toSel = p.toStore;
     _stQty.text = '${p.qty}';
     _tabs.index = 1;
     ref.read(appProvider.notifier).consumePrefill();
@@ -183,8 +201,8 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
                 child: AppDropdown<String>(
                   value: _destBin,
                   mono: true,
-                  items: [for (final b in kAllBins) ddItem(context, b, b, mono: true)],
-                  onChanged: (v) => setState(() => _destBin = v ?? _destBin),
+                  items: [for (final b in ref.watch(appProvider).centralBinCodes) ddItem(context, b, b, mono: true)],
+                  onChanged: (v) => setState(() => _destBinSel = v ?? _destBin),
                 ),
               ),
               LabeledField(label: 'Cantidad', width: 110, child: NumField(controller: _binQty)),
@@ -264,8 +282,8 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
                     width: 210,
                     child: AppDropdown<String>(
                       value: _fromStore,
-                      items: [for (final st in kStores) ddItem(context, st, st)],
-                      onChanged: (v) => setState(() => _fromStore = v ?? _fromStore),
+                      items: [for (final st in s.activeStores) ddItem(context, st.name, st.name)],
+                      onChanged: (v) => setState(() => _fromSel = v ?? _fromStore),
                     ),
                   ),
                   LabeledField(
@@ -273,8 +291,8 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
                     width: 210,
                     child: AppDropdown<String>(
                       value: _toStore,
-                      items: [for (final st in kStores) ddItem(context, st, st)],
-                      onChanged: (v) => setState(() => _toStore = v ?? _toStore),
+                      items: [for (final st in s.activeStores) ddItem(context, st.name, st.name)],
+                      onChanged: (v) => setState(() => _toSel = v ?? _toStore),
                     ),
                   ),
                   LabeledField(label: 'Cantidad', width: 110, child: NumField(controller: _stQty)),
@@ -318,7 +336,7 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
                     style: compactFilled(),
                     onPressed: () {
                       ref.read(appProvider.notifier).storeTransferConfirm(t.id);
-                      showToast(ref, 'Recepción de ${t.id} confirmada en ${t.toStore} (bin ${receiveBinFor(t.toStore)})');
+                      showToast(ref, 'Recepción de ${t.id} confirmada en ${t.toStore} (bin ${ref.read(appProvider).receiveBinOf(t.toStore)})');
                     },
                     child: const Text('Confirmar recepción'),
                   ),

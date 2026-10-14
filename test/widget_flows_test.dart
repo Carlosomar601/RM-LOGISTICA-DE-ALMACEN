@@ -13,6 +13,7 @@ Future<void> pumpApp(WidgetTester t, {Size size = const Size(1440, 1000)}) async
   addTearDown(t.view.reset);
   container = ProviderContainer();
   addTearDown(container.dispose);
+  container.read(appProvider.notifier).login('1111'); // administrador demo
   await t.pumpWidget(UncontrolledProviderScope(container: container, child: const PiqueoApp()));
   await t.pumpAndSettle();
 }
@@ -58,6 +59,13 @@ void main() {
         expect(t.takeException(), isNull);
         await go(t, AppView.users);
         await tapText(t, 'Juan Nieves');
+        expect(t.takeException(), isNull);
+        for (final tab in ['Tiendas', 'Canastas', 'Roles', 'Parámetros']) {
+          await tapText(t, tab);
+          expect(t.takeException(), isNull, reason: 'tab $tab');
+        }
+        await tapText(t, 'Tiendas');
+        await tapText(t, 'Sucursal Bayamón');
         expect(t.takeException(), isNull);
         await go(t, AppView.dashboard);
         await tapText(t, 'MI-20565R15');

@@ -18,10 +18,71 @@ Si `flutter` no está en el PATH, usa la ruta completa: `& "D:\FLUTTER SDK\flutt
 Otras tareas:
 
 ```powershell
-flutter test                   # 29 pruebas: motor FIFO, estado, flujos y overflow a 360/768/1440 px
+flutter test                   # 118 pruebas: motor FIFO, estado, importación y sincronización con RM, overflow a 360/768/1440 px
 flutter analyze
+flutter test integration_test/rm_import_live_test.dart -d windows   # E2E contra la API real (localhost:8180, solo lectura)
 flutter build web              # salida en build\web
+powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1   # instalador fuera de línea (ver installer/README.md)
+powershell -ExecutionPolicy Bypass -File installeruild_installer.ps1   # instalador fuera de línea (ver installer/README.md)
 ```
+
+## Administración
+
+La sección **Administración** (antes «Usuarios») tiene cinco pestañas: **Usuarios**, **Tiendas** (nombre, código, dirección API y clave,
+botón *Probar conexión* simulado), **Canastas** (por almacén: código, zona, capacidad, activar/desactivar), **Roles**
+(permisos por defecto de cada rol) y **Parámetros** (umbrales de antigüedad y nombre de empresa/almacén).
+Las listas de tiendas y canastas de Transferencias y Recibido salen de aquí. El almacén central y las canastas de recepción
+(RECIBO, AL-RX…) son fijos; una tienda con historial no se renombra ni elimina (se desactiva).
+La dirección API de cada tienda es la URL base de su `rmapiv2` (p. ej. `http://servidor:8180/cse.api.v1`; si omites
+`/cse.api.v1` se agrega sola). *Probar conexión* llama a `HealthCheck`.
+
+### Importar recibos desde RM
+
+En **Recibido sin ubicar → Importar desde RM** eliges una tienda con API y un rango de fechas (por defecto, el último día),
+la app consulta `RecReceiptsByDate` y muestra lo que entraría. Al confirmar, cada recibo de RM se crea como `RM-<n.º de recibo>`
+pendiente de ubicar, con la fecha real del recibo (alimenta el FIFO). Es **solo lectura** contra RM y es idempotente por `LineID`
+(reimportar no duplica; líneas nuevas de un recibo ya importado se suman). Los productos que no existan se crean con el código
+y la descripción que trae el recibo. Las cantidades decimales se redondean al entero más cercano.
+La ubicación en canastas queda solo en la app; no se escribe nada de vuelta en RM.
+
+### Órdenes y facturas de RM
+
+Endpoints de RMApiV2 1.12.0 (solicitud original en `docs/SOLICITUD_API_ORDENES.md`): `OrdOpenOrders` (foto de órdenes
+abiertas) y `SalesInvoicesByDate` (facturas; la API acepta máximo 31 días por llamada, la app pide por tramos). Contra una
+API anterior, la app informa "endpoint aún no disponible" sin fallar.
+
+- Las órdenes entran como `ORD-<n>` y las facturas como `FAC-<n>` en **Órdenes entrantes** (botón *Sincronizar con RM*).
+- **Ventas en caja** (transacciones 10, 11, 12 y 19: el cliente se lleva la mercancía) **no** se despachan; la lista se cambia
+  en Parámetros. De cada factura se despacha lo vendido menos lo anulado (`VoidedQuantity`); si RM anula parte de una
+  factura ya importada, se ajusta (o se marca para revisar si ya se empezó a piquear).
+- Una orden que cambia en RM se actualiza si aún no se piquea; si ya se empezó, queda marcada para revisar.
+- **Una orden que se convierte en factura no se despacha dos veces**: la factura se enlaza a su orden ("Facturada en RM")
+  y solo entra lo que exceda lo ordenado ("Adicional a ORD-n"). Lo piqueado se anota en un libro de despachos
+  (`%APPDATA%\RetailManager\PiqueoFIFO\ledger.json`, 90 días) para que esto se cumpla también después de reiniciar la app.
+- Si una factura llega antes que su orden (se facturó entre dos sincronizaciones), la orden entra marcada
+  "Revisar antes de piquear".
+
+### Sincronización automática
+
+**Administración → Parámetros → Sincronización con RM**: frecuencia (solo manual, cada hora, cada 2 horas, una vez al día,
+cada 2 días), días a recuperar al abrir y botón *Sincronizar ahora*. Trae recibos del almacén central, facturas y órdenes de
+cada tienda con API. Corre solo con la app abierta (la app arranca con Windows) y al abrirla si la frecuencia es automática.
+La configuración se guarda en `%APPDATA%\RetailManager\PiqueoFIFO\settings.json`.
+
+## Inicio de sesión (PIN)
+
+La app abre en una pantalla de PIN: cada empleado entra con su **PIN de 4 dígitos** (teclado en pantalla o físico) y
+todo lo que hace (recibos, piqueos, transferencias, historial) queda a su nombre. *Cerrar sesión* está al pie de la barra
+lateral (en pantallas angostas, en el círculo con las iniciales), junto a *Cambiar mi PIN*.
+
+- Los PIN se asignan en **Administración → Usuarios** (cada PIN es único). Un usuario sin PIN no puede entrar.
+- 5 PIN incorrectos bloquean el teclado 30 s. La sesión se cierra sola tras 10 minutos sin uso (se cambia en
+  Administración → Parámetros → Seguridad; 0 = nunca). Un piqueo en curso no se pierde al cerrar sesión.
+- Usuarios, PIN (SHA-256 con sal), roles y seguridad se guardan en `C:\ProgramData\RetailManager\PiqueoFIFO\users.json`,
+  compartido por todas las cuentas de Windows del PC. Cada inicio, cierre, PIN incorrecto y bloqueo se anota en
+  `audit.log` (misma carpeta) y se ve en Administración → Usuarios → *Actividad de sesiones*.
+- Sin `users.json` (solo al desarrollar con `flutter run`) se usan los usuarios de demostración: administrador 1111,
+  supervisora 2222, piqueador 3333. En un PC instalado eso nunca ocurre: el instalador crea el primer administrador.
 
 ## Logo
 

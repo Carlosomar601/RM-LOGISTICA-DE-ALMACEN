@@ -2,7 +2,7 @@ class ReceiptItem {
   ReceiptItem({required this.productId, required this.qtyReceived, this.qtyAllocated = 0});
 
   final String productId;
-  final int qtyReceived;
+  int qtyReceived;
   int qtyAllocated;
 
   int get pending => qtyReceived - qtyAllocated;

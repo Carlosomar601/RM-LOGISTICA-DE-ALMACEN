@@ -1,3 +1,4 @@
+import '../models/admin_config.dart';
 import '../models/app_user.dart';
 import '../models/inv_row.dart';
 import '../models/movement.dart';
@@ -22,6 +23,29 @@ const kAllBins = <String>[
   'B-02-02', 'B-03-01', 'B-03-02', 'B-03-03', 'C-01-01', 'C-01-02',
   'C-02-01', 'C-03-02', 'RECIBO',
 ];
+
+List<Store> seedStores() => [
+      Store(id: 's0', name: kCentral, code: 'AL', receiveBin: 'AL-RX', isCentral: true),
+      Store(id: 's1', name: 'Sucursal Río Piedras', code: 'RP', receiveBin: 'RI-RX'),
+      Store(id: 's2', name: 'Sucursal Bayamón', code: 'SB', receiveBin: 'BA-RX'),
+      Store(id: 's3', name: 'Sucursal Ponce', code: 'SP', receiveBin: 'PO-RX'),
+    ];
+
+/// Canastas del almacén central + bins de recepción de cada tienda.
+List<Bin> seedBins() => [
+      for (final b in kAllBins)
+        Bin(
+          id: 'b-$b',
+          storeId: 's0',
+          code: b,
+          zone: b == 'RECIBO' ? 'Recepción' : 'Zona ${b[0]}',
+          special: b == 'RECIBO',
+        ),
+      Bin(id: 'b-AL-RX', storeId: 's0', code: 'AL-RX', zone: 'Recepción', special: true),
+      Bin(id: 'b-RI-RX', storeId: 's1', code: 'RI-RX', zone: 'Recepción', special: true),
+      Bin(id: 'b-BA-RX', storeId: 's2', code: 'BA-RX', zone: 'Recepción', special: true),
+      Bin(id: 'b-PO-RX', storeId: 's3', code: 'PO-RX', zone: 'Recepción', special: true),
+    ];
 
 const kSuppliers = <String>[
   'Michelin PR Distribuidora',

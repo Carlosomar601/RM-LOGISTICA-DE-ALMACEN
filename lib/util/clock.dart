@@ -2,9 +2,6 @@
 /// valor, nunca contra DateTime.now().
 final kToday = DateTime(2026, 9, 15, 9, 0);
 
-/// Usuario actual de la sesión del demo.
-const kCurrentUser = 'C. Omar';
-
 /// Devuelve kToday menos [n] días (a la hora indicada, por defecto 09:00).
 DateTime daysAgo(int n, {int hour = 9, int minute = 0}) =>
     DateTime(kToday.year, kToday.month, kToday.day - n, hour, minute);

@@ -8,7 +8,7 @@ import '../screens/orders/orders_screen.dart';
 import '../screens/picking/picking_screen.dart';
 import '../screens/receiving/receiving_screen.dart';
 import '../screens/transfers/transfers_screen.dart';
-import '../screens/users/users_screen.dart';
+import '../screens/admin/admin_screen.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
@@ -58,7 +58,7 @@ class _Content extends StatelessWidget {
         AppView.picking => const PickingScreen(),
         AppView.transfers => const TransfersScreen(),
         AppView.history => const HistoryScreen(),
-        AppView.users => const UsersScreen(),
+        AppView.users => const AdminScreen(),
         AppView.about => const AboutScreen(),
       };
 
