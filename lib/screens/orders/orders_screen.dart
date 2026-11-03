@@ -72,9 +72,25 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(appProvider);
+    final n = ref.read(appProvider.notifier);
+    final cats = s.orderCategoryFilter;
+    final levels = s.orderPriceLevelFilter;
+    final filtering = cats.isNotEmpty || levels.isNotEmpty;
+    // Los dos filtros se combinan: la orden debe cumplir la categoría Y el nivel elegidos.
+    List<Order> byCategory(List<Order> l) => filterOrdersByFacet(l, OrderFacet.category, cats);
+    List<Order> byLevel(List<Order> l) => filterOrdersByFacet(l, OrderFacet.priceLevel, levels);
     final open = s.openOrders;
     final done = s.completedOrders;
-    final list = _tabs.index == 0 ? open : done;
+    final openShown = byLevel(byCategory(open));
+    final doneShown = byLevel(byCategory(done));
+    final tabAll = _tabs.index == 0 ? open : done;
+    final list = _tabs.index == 0 ? openShown : doneShown;
+    // Cada fila solo aparece si hay al menos dos valores (o ya hay un filtro guardado en ella).
+    bool show(OrderFacet f, Set<String> sel) => sel.isNotEmpty || {for (final o in s.orders) f.keyOf(o)}.length > 1;
+    final showCategories = show(OrderFacet.category, cats);
+    final showLevels = show(OrderFacet.priceLevel, levels);
+    String tabLabel(String name, List<Order> shown, List<Order> all) =>
+        filtering ? '$name (${shown.length} de ${all.length})' : '$name (${all.length})';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -96,15 +112,43 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> with SingleTickerPr
           controller: _tabs,
           isScrollable: true,
           tabs: [
-            Tab(text: 'Pendientes (${open.length})'),
-            Tab(text: 'Completadas (${done.length})'),
+            Tab(text: tabLabel('Pendientes', openShown, open)),
+            Tab(text: tabLabel('Completadas', doneShown, done)),
           ],
         ),
         const SizedBox(height: 16),
+        // El contador de cada fila aplica el filtro de la otra fila, no el suyo.
+        if (showCategories) ...[
+          _FacetFilterBar(
+            title: 'Categoría de cliente',
+            allLabel: 'Todas',
+            facet: OrderFacet.category,
+            orders: byLevel(tabAll),
+            selected: cats,
+            onChanged: n.setOrderCategoryFilter,
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (showLevels) ...[
+          _FacetFilterBar(
+            title: 'Nivel de precio',
+            allLabel: 'Todos',
+            facet: OrderFacet.priceLevel,
+            orders: byCategory(tabAll),
+            selected: levels,
+            onChanged: n.setOrderPriceLevelFilter,
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (showCategories || showLevels) const SizedBox(height: 4),
         if (list.isEmpty)
           SectionCard(
             child: Text(
-              _tabs.index == 0 ? 'No hay órdenes pendientes.' : 'Aún no hay órdenes completadas.',
+              filtering
+                  ? 'Ninguna orden con los filtros elegidos.'
+                  : _tabs.index == 0
+                      ? 'No hay órdenes pendientes.'
+                      : 'Aún no hay órdenes completadas.',
               style: T.muted(context, size: 13.5),
             ),
           ),
@@ -117,6 +161,63 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> with SingleTickerPr
               onToggle: () => setState(() => _expanded.contains(o.id) ? _expanded.remove(o.id) : _expanded.add(o.id)),
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// Una fila de chips para filtrar por [facet] (categoría o nivel de precio): selección múltiple,
+/// contador por valor y «Todas»/«Todos» por defecto. El conteo ignora lo elegido en esta misma fila.
+class _FacetFilterBar extends StatelessWidget {
+  const _FacetFilterBar({
+    required this.title,
+    required this.allLabel,
+    required this.facet,
+    required this.orders,
+    required this.selected,
+    required this.onChanged,
+  });
+  final String title;
+  final String allLabel;
+  final OrderFacet facet;
+  final List<Order> orders;
+
+  /// Etiquetas elegidas (se comparan por [categoryKeyOf]).
+  final Set<String> selected;
+  final void Function(Set<String>) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final values = orderFacetValues(orders, facet, alsoKeep: selected);
+    final selectedKeys = {for (final l in selected) categoryKeyOf(l)};
+
+    void toggle(OrderCategory k) {
+      final next = {for (final l in selected) if (categoryKeyOf(l) != k.key) l};
+      if (next.length == selected.length) next.add(k.name);
+      onChanged(next);
+    }
+
+    Widget chip(String label, bool on, VoidCallback onTap) => FilterChip(
+          label: Text(label),
+          selected: on,
+          onSelected: (_) => onTap(),
+          showCheckmark: false,
+          selectedColor: c.accentSoft,
+          backgroundColor: c.surface,
+          side: BorderSide(color: on ? c.accent : c.border),
+          labelStyle: T.body(context,
+              size: 12.5, weight: on ? FontWeight.w700 : FontWeight.w500, color: on ? c.accent : c.ink),
+        );
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(title, style: T.muted(context, size: 12.5)),
+        chip('$allLabel (${orders.length})', selected.isEmpty, () => onChanged(const {})),
+        for (final k in values) chip('${k.name} (${k.count})', selectedKeys.contains(k.key), () => toggle(k)),
       ],
     );
   }
@@ -168,6 +269,8 @@ class _OrderCard extends ConsumerWidget {
       monoTitle: false,
       subtitle: '${o.store} · ${o.items.length} artículo(s) · ${fmtDate(o.date)}',
       trailing: Wrap(spacing: 6, children: [
+        if (o.categoryId != null) AppBadge(o.categoryLabel),
+        if (o.priceLevelId != null) AppBadge(o.priceLevelLabel),
         if (o.isRm) AppBadge(o.source == OrderSource.rmInvoice ? 'RM · Factura' : 'RM · Orden', tone: Tone.accent),
         AppBadge(label, tone: tone),
       ]),

@@ -55,12 +55,26 @@ const kSuppliers = <String>[
   'Pirelli Borinquen',
 ];
 
-const kCustomers = <String>[
-  'Llantas del Norte',
-  'Frenos y Gomas Vega',
-  'AutoCentro Caparra',
-  'Taller Los Amigos',
-  'Gomas Express Manatí',
+/// Cliente de demostración con la categoría que tendría en `Clientes.Categoria`
+/// (1 Cliente General, 999 Ruta - Vendedor, 1000 Cuentas Incobrables; null = sin categoría)
+/// y su nivel de precio (`Clientes.PriceLevel`: 1 Precio Venta, 3 Por Mayor).
+class DemoCustomer {
+  const DemoCustomer(this.id, this.name, this.categoryId, this.categoryName,
+      [this.priceLevelId = 1, this.priceLevelName = 'Precio Venta']);
+  final String id;
+  final String name;
+  final int? categoryId;
+  final String? categoryName;
+  final int? priceLevelId;
+  final String? priceLevelName;
+}
+
+const kDemoCustomers = <DemoCustomer>[
+  DemoCustomer('C10', 'Llantas del Norte', 1, 'Cliente General', 3, 'Por Mayor'),
+  DemoCustomer('C11', 'Frenos y Gomas Vega', 1, 'Cliente General'),
+  DemoCustomer('C12', 'AutoCentro Caparra', 999, 'Ruta - Vendedor'),
+  DemoCustomer('C13', 'Taller Los Amigos', 999, 'Ruta - Vendedor', 3, 'Por Mayor'),
+  DemoCustomer('C14', 'Gomas Express Manatí', null, null),
 ];
 
 /// Umbrales de antigüedad.
@@ -137,6 +151,11 @@ List<Order> seedOrders() => [
       Order(
         id: 'OV-10501',
         customer: 'AutoExpress Caguas',
+        customerId: 'C1',
+        categoryId: 1,
+        categoryName: 'Cliente General',
+        priceLevelId: 1,
+        priceLevelName: 'Precio Venta',
         store: 'Sucursal Río Piedras',
         date: kToday,
         status: 'pendiente',
@@ -149,6 +168,11 @@ List<Order> seedOrders() => [
       Order(
         id: 'OV-10502',
         customer: 'Taller Hermanos Ortiz',
+        customerId: 'C2',
+        categoryId: 999,
+        categoryName: 'Ruta - Vendedor',
+        priceLevelId: 3,
+        priceLevelName: 'Por Mayor',
         store: 'Sucursal Bayamón',
         date: kToday,
         status: 'pendiente',
@@ -160,6 +184,11 @@ List<Order> seedOrders() => [
       Order(
         id: 'OV-10503',
         customer: 'Gomas Rivera',
+        customerId: 'C3',
+        categoryId: 1000,
+        categoryName: 'Cuentas Incobrables',
+        priceLevelId: 1,
+        priceLevelName: 'Precio Venta',
         store: 'Sucursal Ponce',
         date: daysAgo(1),
         status: 'pendiente',

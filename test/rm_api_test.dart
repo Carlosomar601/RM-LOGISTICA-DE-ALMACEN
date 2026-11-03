@@ -107,6 +107,42 @@ void main() {
           )));
       final r = (await api.openOrders()).single;
       expect((r.orderNumber, r.customerName, r.pending, r.isService, r.isFuel), ('LA2', 'Carlos', 7.0, false, false));
+      // API que aún no envía la categoría: sin categoría.
+      expect((r.categoryId, r.categoryName), (null, ''));
+    });
+
+    test('categoría del cliente (solicitud a RM API 1.14): con valor, null y sin descripción', () async {
+      Map<String, dynamic> line(String n, Object? id, Object? name) => {
+            'OrderNumber': n, 'OrderDate': '2026-11-03 09:00:00', 'Cliente': 'C$n', 'ClienteNombre': 'Cliente $n',
+            'LineID': n, 'ItemCode': 'X', 'Description': 'X', 'QuantityOrdered': 1, 'Pending': 1,
+            'ClienteCategoriaID': id, 'ClienteCategoria': name,
+          };
+      final api = RmHttpApi('http://srv', client: MockClient((_) async => http.Response(
+            jsonEncode([line('1', 999, 'Ruta - Vendedor'), line('2', null, null), line('3', '5', '')]),
+            200,
+          )));
+      final rows = await api.openOrders();
+      expect([for (final r in rows) (r.categoryId, r.categoryName)], [(999, 'Ruta - Vendedor'), (null, ''), (5, '')]);
+    });
+
+    test('nivel de precio del cliente (RM API 1.14.0) en órdenes y facturas', () async {
+      final api = RmHttpApi('http://srv', client: MockClient((req) async {
+        final common = {'Cliente': 'C1', 'ClienteNombre': 'X', 'LineID': 1, 'ItemCode': 'X', 'Description': 'X'};
+        final body = req.url.path.endsWith('OrdOpenOrders')
+            ? [
+                {...common, 'OrderNumber': 'O1', 'OrderDate': '2026-11-03 09:00:00', 'Pending': 1,
+                  'ClientePriceLevelID': 3, 'ClientePriceLevel': 'Por Mayor'},
+              ]
+            : [
+                {...common, 'InvoiceNumber': 'F1', 'InvoiceDate': '2026-11-03 00:00:00', 'Quantity': 1,
+                  'ClientePriceLevelID': null, 'ClientePriceLevel': null},
+              ];
+        return http.Response(jsonEncode(body), 200);
+      }));
+      final o = (await api.openOrders()).single;
+      expect((o.priceLevelId, o.priceLevelName), (3, 'Por Mayor'));
+      final f = (await api.invoicesByDate(DateTime(2026, 11, 3), DateTime(2026, 11, 3))).single;
+      expect((f.priceLevelId, f.priceLevelName), (null, ''));
     });
 
     test('endpoint inexistente (404 sin sobre JSON) → notAvailable', () async {

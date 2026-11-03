@@ -2,6 +2,9 @@
 
 **Para:** equipo de RM API v2 · **De:** Logística de almacén (Piqueo FIFO) · **Fecha:** 2026-10-13
 
+> Ampliación posterior: categoría y nivel de precio del cliente en estos dos endpoints, en
+> [SOLICITUD_API_CATEGORIA_CLIENTE.md](SOLICITUD_API_CATEGORIA_CLIENTE.md).
+
 ## Por qué
 
 La aplicación de almacén ya importa la mercancía recibida con `RecReceiptsByDate` (gracias). Ahora necesita lo contrario:

@@ -33,6 +33,10 @@ RmOrderLine oline(
   String customer = 'Ferretería Cliente',
   bool service = false,
   bool fuel = false,
+  int? category,
+  String categoryName = '',
+  int? priceLevel,
+  String priceLevelName = '',
 }) =>
     RmOrderLine(
       orderNumber: order,
@@ -46,6 +50,10 @@ RmOrderLine oline(
       pending: pending,
       isService: service,
       isFuel: fuel,
+      categoryId: category,
+      categoryName: categoryName,
+      priceLevelId: priceLevel,
+      priceLevelName: priceLevelName,
     );
 
 RmInvoiceLine iline(
@@ -56,6 +64,10 @@ RmInvoiceLine iline(
   int transaction = 50,
   String customer = 'Ferretería Cliente',
   double voided = 0,
+  int? category,
+  String categoryName = '',
+  int? priceLevel,
+  String priceLevelName = '',
 }) =>
     RmInvoiceLine(
       voidedQuantity: voided,
@@ -69,6 +81,10 @@ RmInvoiceLine iline(
       description: 'Desc $code',
       quantity: qty,
       transaction: transaction,
+      categoryId: category,
+      categoryName: categoryName,
+      priceLevelId: priceLevel,
+      priceLevelName: priceLevelName,
     );
 
 /// API falsa para pruebas: `health == null` significa conexión correcta.

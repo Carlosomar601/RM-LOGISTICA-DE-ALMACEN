@@ -343,6 +343,12 @@ class AppState {
 
   List<Order> get completedOrders => orders.where((o) => !o.isOpen).toList();
 
+  /// Categorías de cliente (por nombre) elegidas por el usuario en «Órdenes entrantes» (vacío = todas).
+  Set<String> get orderCategoryFilter => {...?currentUser?.orderCategories};
+
+  /// Niveles de precio (por nombre) elegidos por el usuario en «Órdenes entrantes» (vacío = todos).
+  Set<String> get orderPriceLevelFilter => {...?currentUser?.orderPriceLevels};
+
   AppUser? get currentUser =>
       currentUserId == null ? null : users.firstWhereOrNull((u) => u.id == currentUserId);
 
@@ -886,6 +892,11 @@ class AppNotifier extends Notifier<AppState> {
         final o = Order(
           id: id,
           customer: first.customerName,
+          customerId: first.customer,
+          categoryId: first.categoryId,
+          categoryName: categoryNameOf(first.categoryId, first.categoryName),
+          priceLevelId: first.priceLevelId,
+          priceLevelName: priceLevelNameOf(first.priceLevelId, first.priceLevelName),
           store: storeName,
           date: first.orderDate,
           status: items.any((i) => i.delivered > 0) ? 'parcial' : 'pendiente',
@@ -909,6 +920,9 @@ class AppNotifier extends Notifier<AppState> {
         continue;
       }
 
+      // La categoría y el nivel del cliente se leen en vivo: si cambian en RM, la orden abierta los sigue.
+      final f = ls.first;
+      _setCustomer(existing, f.customer, f.categoryId, f.categoryName, f.priceLevelId, f.priceLevelName);
       final have = {for (final i in existing.items) _codeOf(i.productId): i.qty};
       final same = have.length == want.length && want.entries.every((e) => have[e.key] == e.value);
       if (same) continue;
@@ -1003,6 +1017,10 @@ class AppNotifier extends Notifier<AppState> {
       final alreadyHere =
           existingFac != null || (invEntry != null && state.orders.any((o) => o.id == invEntry.appId));
       if (alreadyHere) {
+        if (existingFac != null) {
+          final f = ls.first;
+          _setCustomer(existingFac, f.customer, f.categoryId, f.categoryName, f.priceLevelId, f.priceLevelName);
+        }
         // Anulación parcial posterior en RM (VoidParcial): se ajusta si aún no se piquea.
         if (existingFac != null && existingFac.isOpen) {
           final have = {for (final i in existingFac.items) _codeOf(i.productId): i.qty};
@@ -1088,6 +1106,11 @@ class AppNotifier extends Notifier<AppState> {
         Order(
           id: 'FAC-$number',
           customer: first.customerName,
+          customerId: first.customer,
+          categoryId: first.categoryId,
+          categoryName: categoryNameOf(first.categoryId, first.categoryName),
+          priceLevelId: first.priceLevelId,
+          priceLevelName: priceLevelNameOf(first.priceLevelId, first.priceLevelName),
           store: storeName,
           date: first.invoiceDate,
           status: 'pendiente',
@@ -1122,6 +1145,16 @@ class AppNotifier extends Notifier<AppState> {
     );
   }
 
+  /// Actualiza el cliente, su categoría y su nivel de precio vigentes en una orden de RM ya importada.
+  void _setCustomer(Order o, String customerId, int? categoryId, String categoryName, int? priceLevelId,
+      String priceLevelName) {
+    o.customerId = customerId.isEmpty ? o.customerId : customerId;
+    o.categoryId = categoryId;
+    o.categoryName = categoryNameOf(categoryId, categoryName);
+    o.priceLevelId = priceLevelId;
+    o.priceLevelName = priceLevelNameOf(priceLevelId, priceLevelName);
+  }
+
   /// Anota en el libro de despachos lo piqueado de una orden o factura de RM.
   void _recordPicked(Order o, String productId, int qty) {
     if (!o.isRm || o.rmStore == null || o.rmNumber == null || qty <= 0) return;
@@ -1141,11 +1174,17 @@ class AppNotifier extends Notifier<AppState> {
     final n = 2 + _rng.nextInt(2);
     final stores = state.activeStores.where((s) => !s.isCentral).map((s) => s.name).toList();
     if (stores.isEmpty) stores.add(kCentral);
+    final cust = kDemoCustomers[_rng.nextInt(kDemoCustomers.length)];
     state.orders.insert(
       0,
       Order(
         id: id,
-        customer: kCustomers[_rng.nextInt(kCustomers.length)],
+        customer: cust.name,
+        customerId: cust.id,
+        categoryId: cust.categoryId,
+        categoryName: cust.categoryName,
+        priceLevelId: cust.priceLevelId,
+        priceLevelName: cust.priceLevelName,
         store: stores[_rng.nextInt(stores.length)],
         date: kToday,
         status: 'pendiente',
@@ -1156,6 +1195,24 @@ class AppNotifier extends Notifier<AppState> {
     );
     _emit();
     return id;
+  }
+
+  /// Guarda las categorías de cliente (por nombre) elegidas por el usuario que inició sesión (vacío = todas).
+  void setOrderCategoryFilter(Set<String> labels) {
+    final u = state.currentUser;
+    if (u == null) return;
+    u.orderCategories = labels.toList()..sort();
+    _saveUsers();
+    _emit();
+  }
+
+  /// Guarda los niveles de precio (por nombre) elegidos por el usuario que inició sesión (vacío = todos).
+  void setOrderPriceLevelFilter(Set<String> labels) {
+    final u = state.currentUser;
+    if (u == null) return;
+    u.orderPriceLevels = labels.toList()..sort();
+    _saveUsers();
+    _emit();
   }
 
   void calcOrderRoute(String orderId) {

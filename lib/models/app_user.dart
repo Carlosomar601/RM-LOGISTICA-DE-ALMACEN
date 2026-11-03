@@ -60,7 +60,10 @@ class AppUser {
     required this.perms,
     this.pinSalt,
     this.pinHash,
-  });
+    List<String>? orderCategories,
+    List<String>? orderPriceLevels,
+  })  : orderCategories = orderCategories ?? [],
+        orderPriceLevels = orderPriceLevels ?? [];
 
   final String id;
   String name;
@@ -72,6 +75,13 @@ class AppUser {
   /// PIN de acceso: solo se guarda el hash con sal, nunca el PIN.
   String? pinSalt;
   String? pinHash;
+
+  /// Categorías de cliente elegidas en «Órdenes entrantes», por nombre (vacío = todas).
+  /// Se recuerda por usuario.
+  List<String> orderCategories;
+
+  /// Niveles de precio elegidos en «Órdenes entrantes», por nombre (vacío = todos).
+  List<String> orderPriceLevels;
 
   bool can(Area a) => perms[a] ?? false;
 
@@ -106,6 +116,8 @@ class AppUser {
         'perms': [for (final a in Area.values) if (can(a)) a.name],
         if (hasPin) 'pinSalt': pinSalt,
         if (hasPin) 'pinHash': pinHash,
+        if (orderCategories.isNotEmpty) 'orderCategories': orderCategories,
+        if (orderPriceLevels.isNotEmpty) 'orderPriceLevels': orderPriceLevels,
       };
 
   factory AppUser.fromJson(Map<String, dynamic> j) {
@@ -120,6 +132,15 @@ class AppUser {
       perms: permList is List ? {for (final a in Area.values) a: permList.contains(a.name)} : rolePreset(role),
       pinSalt: j['pinSalt'] as String?,
       pinHash: j['pinHash'] as String?,
+      orderCategories: [
+        for (final e in (j['orderCategories'] is List ? j['orderCategories'] as List : const []))
+          // Solo nombres; un filtro viejo guardado por ID se descarta (vuelve a «Todas»).
+          if (e is String && e.trim().isNotEmpty) e,
+      ],
+      orderPriceLevels: [
+        for (final e in (j['orderPriceLevels'] is List ? j['orderPriceLevels'] as List : const []))
+          if (e is String && e.trim().isNotEmpty) e,
+      ],
     );
   }
 }

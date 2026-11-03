@@ -82,6 +82,13 @@ bool _bool(Map<String, dynamic> j, String k) {
   return const {'true', '1', 'yes', 'si', 'sí'}.contains(_str(j, k).toLowerCase());
 }
 
+int? _intOrNull(Map<String, dynamic> j, String k) {
+  final v = j[k];
+  if (v == null) return null;
+  if (v is num) return v.toInt();
+  return int.tryParse(v.toString().trim());
+}
+
 DateTime _date(Map<String, dynamic> j, String k) {
   final d = DateTime.tryParse(_str(j, k).replaceFirst(' ', 'T'));
   if (d == null) throw RmApiException('Fecha inválida en $k: «${_str(j, k)}»');
@@ -103,6 +110,10 @@ class RmOrderLine {
     this.unit = '',
     this.isService = false,
     this.isFuel = false,
+    this.categoryId,
+    this.categoryName = '',
+    this.priceLevelId,
+    this.priceLevelName = '',
   });
 
   final String orderNumber;
@@ -118,6 +129,16 @@ class RmOrderLine {
   final bool isService;
   final bool isFuel;
 
+  /// Categoría vigente del cliente (`Clientes.Categoria`; null = sin categoría) y su descripción
+  /// (`CategoriasClientes.Descripcion`). La API las lee en vivo con un JOIN de solo lectura.
+  final int? categoryId;
+  final String categoryName;
+
+  /// Nivel de precio vigente del cliente (`Clientes.PriceLevel`, null si es 0) y su nombre
+  /// (`PriceLevels.Nombre`). RM API 1.14.0+.
+  final int? priceLevelId;
+  final String priceLevelName;
+
   factory RmOrderLine.fromJson(Map<String, dynamic> j) => RmOrderLine(
         orderNumber: _str(j, 'OrderNumber'),
         orderDate: _date(j, 'OrderDate'),
@@ -131,6 +152,10 @@ class RmOrderLine {
         unit: _str(j, 'Unit'),
         isService: _bool(j, 'IsService'),
         isFuel: _bool(j, 'IsFuel') || _str(j, 'ItemCode').toLowerCase() == 'gasolina',
+        categoryId: _intOrNull(j, 'ClienteCategoriaID'),
+        categoryName: _str(j, 'ClienteCategoria'),
+        priceLevelId: _intOrNull(j, 'ClientePriceLevelID'),
+        priceLevelName: _str(j, 'ClientePriceLevel'),
       );
 }
 
@@ -151,6 +176,10 @@ class RmInvoiceLine {
     this.transaction = 50,
     this.isService = false,
     this.originalInvoice = '',
+    this.categoryId,
+    this.categoryName = '',
+    this.priceLevelId,
+    this.priceLevelName = '',
   });
 
   final String invoiceNumber;
@@ -174,6 +203,12 @@ class RmInvoiceLine {
 
   /// En una anulación, la factura original.
   final String originalInvoice;
+
+  /// Categoría y nivel de precio vigentes del cliente (ver [RmOrderLine.categoryId]).
+  final int? categoryId;
+  final String categoryName;
+  final int? priceLevelId;
+  final String priceLevelName;
 
   /// Lo que hay que despachar: vendido menos anulado.
   double get toShip => quantity - voidedQuantity;
@@ -203,6 +238,10 @@ class RmInvoiceLine {
         unit: _str(j, 'Unit'),
         transaction: _num(j, 'Transaccion').toInt() == 0 ? 50 : _num(j, 'Transaccion').toInt(),
         isService: _bool(j, 'IsService'),
+        categoryId: _intOrNull(j, 'ClienteCategoriaID'),
+        categoryName: _str(j, 'ClienteCategoria'),
+        priceLevelId: _intOrNull(j, 'ClientePriceLevelID'),
+        priceLevelName: _str(j, 'ClientePriceLevel'),
       );
 }
 
