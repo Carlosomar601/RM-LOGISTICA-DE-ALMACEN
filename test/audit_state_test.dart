@@ -2,14 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:piqueo_fifo_centeno/auth/user_store.dart';
-import 'package:piqueo_fifo_centeno/data/seed.dart';
-import 'package:piqueo_fifo_centeno/models/app_user.dart';
-import 'package:piqueo_fifo_centeno/models/audit.dart';
-import 'package:piqueo_fifo_centeno/models/pending_item.dart';
-import 'package:piqueo_fifo_centeno/models/pick_session.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
-import 'package:piqueo_fifo_centeno/state/audit_engine.dart';
+import 'package:rm_core/auth/user_store.dart';
+import 'package:rm_core/data/seed.dart';
+import 'package:rm_core/models/app_user.dart';
+import 'package:rm_core/models/audit.dart';
+import 'package:rm_core/models/pending_item.dart';
+import 'package:rm_core/models/pick_session.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/state/audit_engine.dart';
 
 void main() {
   late ProviderContainer c;
@@ -62,7 +62,7 @@ void main() {
 
     // Piqueo: la ruta FIFO salta A-01-02.
     n().suggestSingle('p1', 40, 'OV-1');
-    final sess = s().pickSessions[kSingleSessionKey]!;
+    final sess = s().pickSessions[s().singleKey]!;
     expect(sess.steps.map((st) => st.bin), ['A-01-01', 'B-02-01']);
     expect(sess.shortfall!.take, 8);
 
@@ -82,16 +82,16 @@ void main() {
 
   test('al bloquear, los pasos por recoger en esa canasta se reubican', () {
     n().suggestSingle('p1', 10, 'OV-1');
-    expect(s().pickSessions[kSingleSessionKey]!.steps.single.bin, 'A-01-01');
+    expect(s().pickSessions[s().singleKey]!.steps.single.bin, 'A-01-01');
     final id = n().createAudit(bins: ['A-01-01']).id!;
     expect(n().startBinCount(id, 'A-01-01'), isNull);
-    expect(s().pickSessions[kSingleSessionKey]!.steps.single.bin, 'A-01-02');
+    expect(s().pickSessions[s().singleKey]!.steps.single.bin, 'A-01-02');
   });
 
   test('no se empieza a contar si hay mercancía recogida sin confirmar en la canasta', () {
     n().suggestSingle('p1', 10, 'OV-77');
-    final st = s().pickSessions[kSingleSessionKey]!.steps.single;
-    n().stepPicked(kSingleSessionKey, st.id);
+    final st = s().pickSessions[s().singleKey]!.steps.single;
+    n().stepPicked(s().singleKey, st.id);
     final id = n().createAudit(bins: ['A-01-01']).id!;
     expect(n().startBinCount(id, 'A-01-01'), contains('OV-77'));
     expect(s().lockedBins, isEmpty);
@@ -101,11 +101,11 @@ void main() {
 
   test('un paso ya trazado en una canasta bloqueada no se puede marcar', () {
     n().suggestSingle('p1', 40, 'OV-1');
-    final step = s().pickSessions[kSingleSessionKey]!.steps.firstWhere((st) => st.bin == 'A-01-02');
+    final step = s().pickSessions[s().singleKey]!.steps.firstWhere((st) => st.bin == 'A-01-02');
     // Bloqueo directo (sin reubicar) para simular una sesión vieja.
     final id = n().createAudit(bins: ['A-01-02']).id!;
     s().audits.first.bins.single.status = AuditBinStatus.contando;
-    expect(n().stepPicked(kSingleSessionKey, step.id), contains(id));
+    expect(n().stepPicked(s().singleKey, step.id), contains(id));
     expect(step.status, StepStatus.pending);
   });
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/tone.dart';
+import 'package:rm_core/models/tone.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 

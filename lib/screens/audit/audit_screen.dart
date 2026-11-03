@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../state/app_state.dart';
+import 'package:rm_core/state/app_state.dart';
 import '../../widgets/common.dart';
 import 'accuracy_tab.dart';
 import 'audit_count_view.dart';

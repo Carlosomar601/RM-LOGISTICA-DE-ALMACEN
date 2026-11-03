@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:piqueo_fifo_centeno/main.dart';
 import 'package:piqueo_fifo_centeno/shell/sidebar.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
+import 'package:rm_core/state/app_state.dart';
 
 late ProviderContainer container;
 AppNotifier get n => container.read(appProvider.notifier);

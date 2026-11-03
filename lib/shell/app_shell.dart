@@ -10,7 +10,7 @@ import '../screens/picking/picking_screen.dart';
 import '../screens/receiving/receiving_screen.dart';
 import '../screens/transfers/transfers_screen.dart';
 import '../screens/admin/admin_screen.dart';
-import '../state/app_state.dart';
+import 'package:rm_core/state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/toast.dart';

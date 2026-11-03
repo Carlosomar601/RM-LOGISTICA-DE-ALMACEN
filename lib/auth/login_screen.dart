@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/tone.dart';
-import '../state/app_state.dart';
+import 'package:rm_core/models/tone.dart';
+import 'package:rm_core/state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
-import 'user_store.dart';
+import 'package:rm_core/auth/user_store.dart';
+import 'package:rm_core/util/clock.dart';
+
+import '../remote_ui/client_mode.dart';
+import '../remote_ui/connect_screen.dart';
 
 /// Pantalla de PIN: se muestra mientras no hay sesión iniciada.
 class LoginScreen extends ConsumerStatefulWidget {
@@ -23,6 +27,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
   final _focus = FocusNode();
   String _pin = '';
   String? _error;
+  bool _busy = false;
   Timer? _lockTimer;
   late final AnimationController _shake =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 360));
@@ -60,7 +65,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
   }
 
   void _digit(String d) {
-    if (_pin.length >= 4 || _lockLeft > 0) return;
+    if (_busy || _pin.length >= 4 || _lockLeft > 0) return;
     setState(() {
       _pin += d;
       if (_pin.length == 1) _error = null;
@@ -73,8 +78,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
     setState(() => _pin = _pin.substring(0, _pin.length - 1));
   }
 
-  void _submit() {
-    final err = ref.read(appProvider.notifier).login(_pin);
+  Future<void> _submit() async {
+    setState(() => _busy = true);
+    // En un cliente el PIN se comprueba en el servidor.
+    final err = await ref.read(appProvider.notifier).loginAsync(_pin);
+    if (!mounted) return;
+    _busy = false;
     if (err == null) return; // la app pasa a la pantalla principal
     setState(() {
       _error = err;
@@ -102,7 +111,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
   Widget build(BuildContext context) {
     final s = ref.watch(appProvider);
     final c = context.c;
-    final demo = ref.watch(userStoreProvider).status == UserStoreStatus.demo;
+    final client = ref.watch(clientModeProvider);
+    // Cliente: el servidor dice si está en modo demostración.
+    final demo = client != null ? demoMode : ref.watch(userStoreProvider).status == UserStoreStatus.demo;
     final broken = s.userStoreError;
     final locked = _lockLeft > 0;
 
@@ -181,6 +192,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
                     const SizedBox(height: 22),
                     NoteBox(
                       'Modo demostración (sin users.json): administrador 1111, supervisora 2222, piqueador 3333.',
+                    ),
+                  ],
+                  if (client != null) ...[
+                    const SizedBox(height: 18),
+                    TextButton.icon(
+                      key: const ValueKey('change-server'),
+                      onPressed: () => Navigator.of(context)
+                          .push(MaterialPageRoute<void>(builder: (_) => const ConnectScreen(asPage: true))),
+                      icon: const Icon(Icons.dns_outlined, size: 16),
+                      label: Text('Servidor: ${client.address ?? '—'} · Cambiar'),
                     ),
                   ],
                 ],

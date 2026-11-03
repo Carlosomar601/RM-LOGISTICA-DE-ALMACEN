@@ -4,13 +4,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:piqueo_fifo_centeno/backup/backup_service.dart';
-import 'package:piqueo_fifo_centeno/backup/backup_settings.dart';
-import 'package:piqueo_fifo_centeno/config/app_config.dart';
+import 'package:rm_core/backup/backup_service.dart';
+import 'package:rm_core/backup/backup_settings.dart';
+import 'package:rm_core/config/app_config.dart';
 import 'package:piqueo_fifo_centeno/main.dart';
 import 'package:piqueo_fifo_centeno/shell/sidebar.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
-import 'package:piqueo_fifo_centeno/sync/sync_service.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/sync/sync_service.dart';
 
 class _FakeTimer implements Timer {
   @override

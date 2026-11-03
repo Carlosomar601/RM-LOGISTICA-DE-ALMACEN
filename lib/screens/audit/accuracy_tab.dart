@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../models/tone.dart';
-import '../../state/app_state.dart';
-import '../../state/audit_engine.dart';
-import '../../util/clock.dart';
-import '../../util/format.dart';
+import 'package:rm_core/models/tone.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/state/audit_engine.dart';
+import 'package:rm_core/util/clock.dart';
+import 'package:rm_core/util/format.dart';
 import '../../widgets/badge.dart';
 import '../../widgets/common.dart';
 import '../../widgets/data_table_card.dart';

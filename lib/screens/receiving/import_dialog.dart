@@ -2,9 +2,9 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../api/rm_api.dart';
-import '../../models/tone.dart';
-import '../../state/app_state.dart';
+import 'package:rm_core/api/rm_api.dart';
+import 'package:rm_core/models/tone.dart';
+import 'package:rm_core/state/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/badge.dart';

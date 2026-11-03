@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:piqueo_fifo_centeno/data/seed.dart';
-import 'package:piqueo_fifo_centeno/models/audit.dart';
-import 'package:piqueo_fifo_centeno/models/inv_row.dart';
-import 'package:piqueo_fifo_centeno/state/audit_engine.dart';
+import 'package:rm_core/data/seed.dart';
+import 'package:rm_core/models/audit.dart';
+import 'package:rm_core/models/inv_row.dart';
+import 'package:rm_core/state/audit_engine.dart';
 
 AuditExpected exp(String pid, int qty, {String lot = 'L-1', DateTime? date}) => AuditExpected(
       invId: 'inv-$pid-$lot',

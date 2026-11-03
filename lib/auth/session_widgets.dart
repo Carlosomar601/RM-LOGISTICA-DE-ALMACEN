@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../state/app_state.dart';
+import 'package:rm_core/state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
-import '../util/format.dart';
+import 'package:rm_core/util/format.dart';
 import '../widgets/common.dart';
 import '../widgets/toast.dart';
 
@@ -34,12 +34,13 @@ class _PinDialogState extends ConsumerState<_PinDialog> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (_pin.text != _confirm.text) {
       setState(() => _error = 'Los dos PIN no coinciden.');
       return;
     }
-    final err = ref.read(appProvider.notifier).setPin(widget.userId, _pin.text);
+    final err = await ref.read(appProvider.notifier).setPinAsync(widget.userId, _pin.text);
+    if (!mounted) return;
     if (err != null) {
       setState(() => _error = err);
       return;

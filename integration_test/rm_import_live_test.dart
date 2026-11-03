@@ -8,8 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:piqueo_fifo_centeno/main.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
-import 'package:piqueo_fifo_centeno/sync/sync_service.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/sync/sync_service.dart';
 
 const _api = String.fromEnvironment('RM_API', defaultValue: 'http://localhost:8180');
 

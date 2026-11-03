@@ -1,0 +1,21 @@
+<!-- Servicio de Windows del servidor de RM Logistics (WinSW 2.12). El instalador lo registra con
+     "RMLogisticsServer.exe install". WinSW detiene el servidor con Ctrl+C: guarda los datos antes de salir. -->
+<service>
+  <id>RMLogisticsServer</id>
+  <name>RM Logistics Server</name>
+  <description>Servidor de Retail Manager Logistics &amp; Warehouse: guarda la base de datos del almacén y atiende a los equipos Windows y Android de la red local (puerto TCP 8190).</description>
+  <executable>%BASE%\rm_server.exe</executable>
+  <arguments>--port 8190</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>20 sec</stoptimeout>
+  <logpath>%ProgramData%\RetailManager\PiqueoFIFO\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>2048</sizeThreshold>
+    <keepFiles>3</keepFiles>
+  </log>
+</service>

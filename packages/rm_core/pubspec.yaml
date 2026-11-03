@@ -1,0 +1,19 @@
+name: rm_core
+description: "Núcleo de RM Logistics: modelos, reglas de negocio, persistencia e integración con RM. Dart puro (sin Flutter), compartido por la app y el servidor."
+publish_to: 'none'
+version: 1.2.0
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  riverpod: ^2.6.1
+  collection: ^1.19.1
+  http: ^1.6.0
+  crypto: ^3.0.7
+  archive: ^4.5.2
+  web_socket_channel: ^3.0.1
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^6.0.0

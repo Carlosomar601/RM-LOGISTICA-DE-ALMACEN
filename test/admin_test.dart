@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:piqueo_fifo_centeno/api/rm_api.dart';
-import 'package:piqueo_fifo_centeno/data/seed.dart';
-import 'package:piqueo_fifo_centeno/models/app_user.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
+import 'package:rm_core/api/rm_api.dart';
+import 'package:rm_core/data/seed.dart';
+import 'package:rm_core/models/app_user.dart';
+import 'package:rm_core/state/app_state.dart';
 
 import 'fake_rm_api.dart';
 

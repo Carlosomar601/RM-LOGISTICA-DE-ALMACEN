@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:piqueo_fifo_centeno/api/rm_api.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
+import 'package:rm_core/api/rm_api.dart';
+import 'package:rm_core/state/app_state.dart';
 
 import 'fake_rm_api.dart';
 

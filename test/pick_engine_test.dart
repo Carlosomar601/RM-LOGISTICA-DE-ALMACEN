@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:piqueo_fifo_centeno/data/seed.dart';
-import 'package:piqueo_fifo_centeno/models/inv_row.dart';
-import 'package:piqueo_fifo_centeno/models/pick_session.dart';
-import 'package:piqueo_fifo_centeno/state/pick_engine.dart';
-import 'package:piqueo_fifo_centeno/util/clock.dart';
+import 'package:rm_core/data/seed.dart';
+import 'package:rm_core/models/inv_row.dart';
+import 'package:rm_core/models/pick_session.dart';
+import 'package:rm_core/state/pick_engine.dart';
+import 'package:rm_core/util/clock.dart';
 
 void main() {
   late List<InvRow> inv;

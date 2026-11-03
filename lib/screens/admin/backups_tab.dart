@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../backup/backup_service.dart';
-import '../../backup/backup_settings.dart';
-import '../../models/tone.dart';
-import '../../state/app_state.dart';
+import 'package:rm_core/backup/backup_service.dart';
+import 'package:rm_core/backup/backup_settings.dart';
+import 'package:rm_core/models/tone.dart';
+import 'package:rm_core/state/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
-import '../../util/format.dart';
+import 'package:rm_core/util/format.dart';
 import '../../widgets/badge.dart';
 import '../../widgets/common.dart';
 import '../../widgets/toast.dart';
@@ -74,8 +74,9 @@ class _BackupsTabState extends ConsumerState<BackupsTab> {
     }
   }
 
-  void _testFolder() {
-    final err = _svc.testFolder(_folder.text);
+  Future<void> _testFolder() async {
+    final err = await _svc.testFolderAsync(_folder.text);
+    if (!mounted) return;
     setState(() {
       _folderOk = err == null;
       _folderMsg = err ?? 'Carpeta OK: se puede escribir.';
@@ -106,8 +107,9 @@ class _BackupsTabState extends ConsumerState<BackupsTab> {
   Future<void> _restore(BackupInfo b) async {
     final BackupContents contents;
     try {
-      contents = _svc.inspect(b.file);
+      contents = await _svc.inspectAsync(b);
     } on FormatException catch (e) {
+      if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (_) => AlertDialog(
@@ -305,7 +307,8 @@ class _BackupsTabState extends ConsumerState<BackupsTab> {
         SectionCard(
           title: 'Respaldos guardados',
           subtitle: folder == null ? 'Sin carpeta de respaldos.' : folder.path,
-          trailing: folder == null || !Platform.isWindows
+          // En un cliente la carpeta está en el servidor: no se puede abrir desde aquí.
+          trailing: folder == null || !_svc.isLocal || !Platform.isWindows
               ? null
               : TextButton.icon(
                   onPressed: () {
@@ -379,9 +382,11 @@ class _RestoreDialogState extends ConsumerState<_RestoreDialog> {
     super.dispose();
   }
 
-  void _confirm() {
-    final u = ref.read(appProvider).currentUser;
-    if (u == null || !u.checkPin(_pin.text)) {
+  Future<void> _confirm() async {
+    // En un cliente el PIN se comprueba en el servidor.
+    final ok = await ref.read(appProvider.notifier).confirmPin(_pin.text);
+    if (!mounted) return;
+    if (!ok) {
       setState(() => _error = 'PIN incorrecto.');
       return;
     }
@@ -414,7 +419,7 @@ class _RestoreDialogState extends ConsumerState<_RestoreDialog> {
                 '${fmtInt((counts['unidades'] as num?)?.toInt() ?? k.data.totalUnits)} unidades · '
                 '${counts['ordenes'] ?? k.data.orders.length} órdenes · '
                 '${counts['recibos'] ?? k.data.receipts.length} recibos · '
-                '${k.users.users.length} usuarios',
+                '${counts['usuarios'] ?? k.users.users.length} usuarios',
                 style: T.muted(context, size: 12.5),
               ),
               const SizedBox(height: 12),

@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:piqueo_fifo_centeno/models/order.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
-import 'package:piqueo_fifo_centeno/sync/dispatch_ledger.dart';
+import 'package:rm_core/models/order.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/sync/dispatch_ledger.dart';
 
 import 'fake_rm_api.dart';
 

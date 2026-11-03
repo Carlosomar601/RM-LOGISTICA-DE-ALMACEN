@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:piqueo_fifo_centeno/auth/audit_log.dart';
-import 'package:piqueo_fifo_centeno/auth/user_store.dart';
-import 'package:piqueo_fifo_centeno/models/app_user.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
+import 'package:rm_core/auth/audit_log.dart';
+import 'package:rm_core/auth/user_store.dart';
+import 'package:rm_core/models/app_user.dart';
+import 'package:rm_core/state/app_state.dart';
 
 void main() {
   late Directory tmp;

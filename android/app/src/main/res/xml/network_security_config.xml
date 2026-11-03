@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- El servidor de RM Logistics está en la red local y se habla por http/ws (sin certificado).
+     Se permite tráfico sin cifrar; el PIN se comprueba en el servidor y nunca viaja su hash. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

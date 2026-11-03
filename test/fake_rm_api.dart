@@ -1,4 +1,4 @@
-import 'package:piqueo_fifo_centeno/api/rm_api.dart';
+import 'package:rm_core/api/rm_api.dart';
 
 RmReceiptLine line(
   String id, {

@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:piqueo_fifo_centeno/config/app_config.dart';
-import 'package:piqueo_fifo_centeno/data/data_store.dart';
-import 'package:piqueo_fifo_centeno/selftest.dart';
-import 'package:piqueo_fifo_centeno/state/app_state.dart';
-import 'package:piqueo_fifo_centeno/sync/dispatch_ledger.dart';
-import 'package:piqueo_fifo_centeno/util/clock.dart';
+import 'package:rm_core/config/app_config.dart';
+import 'package:rm_core/data/data_store.dart';
+import 'package:rm_core/selftest.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/sync/dispatch_ledger.dart';
+import 'package:rm_core/util/clock.dart';
 
 const _installed = AppConfig(apiUrl: 'http://srv:8180', source: 'config.json');
 
@@ -44,7 +44,7 @@ void main() {
     final s = c.read(appProvider);
     final again = AppState.fromDataJson(jsonDecode(jsonEncode(s.toDataJson())) as Map);
     expect(canonical(again), canonical(s));
-    expect(again.pickSessions[kSingleSessionKey]?.steps, isNotEmpty);
+    expect(again.pickSessions[singleSessionKey('u1')]?.steps, isNotEmpty);
     expect(again.tbSeq, s.tbSeq);
     expect(again.history.first.type, 'transfer-bin');
     // Los usuarios no van en data.json.

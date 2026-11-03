@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../state/app_state.dart';
-import '../sync/sync_service.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/sync/sync_service.dart';
 import 'login_screen.dart';
 
 /// Muestra la pantalla de PIN o la app, y cierra la sesión tras [AppSettings.autoLogoutMinutes]

@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/session_widgets.dart';
-import '../state/app_state.dart';
-import '../sync/sync_service.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
-import '../util/format.dart';
+import 'package:rm_core/util/format.dart';
 import '../widgets/common.dart';
 import '../widgets/pick_step_row.dart';
 

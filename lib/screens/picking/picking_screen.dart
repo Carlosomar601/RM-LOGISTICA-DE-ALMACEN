@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../models/pick_session.dart';
-import '../../models/tone.dart';
-import '../../state/app_state.dart';
-import '../../state/pick_engine.dart';
-import '../../util/clock.dart';
+import 'package:rm_core/models/pick_session.dart';
+import 'package:rm_core/models/tone.dart';
+import 'package:rm_core/state/app_state.dart';
+import 'package:rm_core/state/pick_engine.dart';
+import 'package:rm_core/util/clock.dart';
 import '../../widgets/badge.dart';
 import '../../widgets/common.dart';
 import '../../widgets/pick_step_row.dart';
@@ -61,7 +61,8 @@ class _PickingScreenState extends ConsumerState<PickingScreen> {
   @override
   void initState() {
     super.initState();
-    final existing = ref.read(appProvider).pickSessions[kSingleSessionKey];
+    final st = ref.read(appProvider);
+    final existing = st.pickSessions[st.singleKey];
     if (existing != null) {
       _productId = existing.productId;
       _qty.text = '${existing.qtyRequested}';
@@ -88,7 +89,7 @@ class _PickingScreenState extends ConsumerState<PickingScreen> {
 
   void _confirm() {
     final st = ref.read(appProvider);
-    final s = st.pickSessions[kSingleSessionKey];
+    final s = st.pickSessions[st.singleKey];
     if (s == null) return;
     final code = st.product(s.productId).code;
     final res = ref.read(appProvider.notifier).confirmSingle();
@@ -104,7 +105,7 @@ class _PickingScreenState extends ConsumerState<PickingScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(appProvider);
-    final s = state.pickSessions[kSingleSessionKey];
+    final s = state.pickSessions[state.singleKey];
     // Los productos llegan con los recibos de RM: si el elegido no existe, el primero.
     if (state.products.isNotEmpty && state.products.every((p) => p.id != _productId)) {
       _productId = state.products.first.id;
@@ -191,7 +192,7 @@ class _PickingScreenState extends ConsumerState<PickingScreen> {
                   ),
                 ]),
                 const SizedBox(height: 16),
-                PickStepsView(sessionKey: kSingleSessionKey),
+                PickStepsView(sessionKey: state.singleKey),
                 const SizedBox(height: 14),
                 NoteBox(sessionNote(s)),
                 const SizedBox(height: 16),
