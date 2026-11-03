@@ -29,12 +29,14 @@ BuiltSteps buildLocationSteps(
   String productId,
   int qty,
   Set<String> excludeInvIds,
-  IdFn nextStepId,
-) {
+  IdFn nextStepId, {
+  Set<String> lockedBins = const {},
+}) {
   final rows = fifoSorted(inventory.where((r) =>
       r.productId == productId &&
       r.store == kCentralStore &&
       r.qty > 0 &&
+      !lockedBins.contains(r.bin) &&
       !excludeInvIds.contains(r.id)));
   var remaining = qty;
   final steps = <PickStep>[];
@@ -62,8 +64,9 @@ PickSession createPickSession(
   required int qty,
   required String doc,
   required IdFn nextId,
+  Set<String> lockedBins = const {},
 }) {
-  final built = buildLocationSteps(inventory, productId, qty, const {}, nextId);
+  final built = buildLocationSteps(inventory, productId, qty, const {}, nextId, lockedBins: lockedBins);
   return PickSession(
     key: key,
     productId: productId,
@@ -84,11 +87,11 @@ int acceptedMissingQty(PickSession s) =>
 int pickedQty(PickSession s) =>
     s.steps.where((st) => st.status == StepStatus.picked).fold(0, (a, st) => a + st.take);
 
-void reflowSession(PickSession s, List<InvRow> inventory, IdFn nextId) {
+void reflowSession(PickSession s, List<InvRow> inventory, IdFn nextId, {Set<String> lockedBins = const {}}) {
   final used = s.steps.map((st) => st.invId).toSet();
   final need = s.qtyRequested - committedQty(s) - acceptedMissingQty(s);
   if (need > 0) {
-    final built = buildLocationSteps(inventory, s.productId, need, used, nextId);
+    final built = buildLocationSteps(inventory, s.productId, need, used, nextId, lockedBins: lockedBins);
     s.steps.addAll(built.steps);
     if (built.shortfall > 0) {
       final prev = s.shortfall;
@@ -120,7 +123,8 @@ void markPicked(PickSession s, String stepId) {
   }
 }
 
-void markMissingHere(PickSession s, String stepId, List<InvRow> inventory, IdFn nextId) {
+void markMissingHere(PickSession s, String stepId, List<InvRow> inventory, IdFn nextId,
+    {Set<String> lockedBins = const {}}) {
   var changed = false;
   for (final st in s.steps) {
     if (st.id == stepId && st.status == StepStatus.pending) {
@@ -128,23 +132,50 @@ void markMissingHere(PickSession s, String stepId, List<InvRow> inventory, IdFn 
       changed = true;
     }
   }
-  if (changed) reflowSession(s, inventory, nextId);
+  if (changed) reflowSession(s, inventory, nextId, lockedBins: lockedBins);
 }
 
-void declareShortfallMissing(PickSession s, List<InvRow> inventory, IdFn nextId) {
+void declareShortfallMissing(PickSession s, List<InvRow> inventory, IdFn nextId,
+    {Set<String> lockedBins = const {}}) {
   final sf = s.shortfall;
   if (sf == null || sf.status != ShortfallStatus.unresolved) return;
   sf.status = ShortfallStatus.missing;
-  reflowSession(s, inventory, nextId);
+  reflowSession(s, inventory, nextId, lockedBins: lockedBins);
 }
 
+/// Lo que no estaba en una canasta al piquear: pasa a PENDIENTES con su lote y fecha.
+class PickPendingOut {
+  const PickPendingOut({
+    required this.movementId,
+    required this.productId,
+    required this.qty,
+    required this.bin,
+    required this.lot,
+    required this.entryDate,
+    required this.receipt,
+  });
+  final String movementId;
+  final String productId;
+  final int qty;
+  final String bin;
+  final String lot;
+  final DateTime entryDate;
+  final String receipt;
+}
+
+/// Motivo con que el piqueo envía a PENDIENTES.
+const kPickMissingReason = 'No estaba en la canasta (piqueo)';
+
 class CommitResult {
-  const CommitResult(this.delivered, this.shortQty, this.movements);
+  const CommitResult(this.delivered, this.shortQty, this.movements, [this.pendingOut = const []]);
   final int delivered;
   final int shortQty;
 
   /// Movimientos en orden cronológico (el último es el más reciente).
   final List<Movement> movements;
+
+  /// Filas «No estaba aquí» que van a PENDIENTES.
+  final List<PickPendingOut> pendingOut;
 }
 
 CommitResult commitPickSession(
@@ -157,6 +188,7 @@ CommitResult commitPickSession(
   required IdFn nextMovementId,
 }) {
   final movements = <Movement>[];
+  final pendingOut = <PickPendingOut>[];
   InvRow? rowById(String id) {
     for (final r in inventory) {
       if (r.id == id) return r;
@@ -183,17 +215,31 @@ CommitResult commitPickSession(
       ));
     } else if (st.status == StepStatus.missingHere) {
       final row = rowById(st.invId);
-      if (row != null) row.qty = (row.qty - st.available).clamp(0, 1 << 30);
+      // Solo se aparta lo que todavía está registrado en la fila (puede haber cambiado).
+      final qty = row == null ? 0 : (row.qty < st.available ? row.qty : st.available);
+      if (row == null || qty <= 0) continue;
+      row.qty -= qty;
+      final id = nextMovementId();
       movements.add(Movement(
-        id: nextMovementId(),
-        type: 'discrepancia',
+        id: id,
+        type: 'a-pendientes',
         productId: s.productId,
-        qty: st.available,
+        qty: qty,
         doc: docLabel,
         user: user,
         dateTime: now,
         from: '$kCentralStore / ${st.bin}',
-        to: 'Ajuste por ciclo de conteo',
+        to: 'PENDIENTES',
+        note: kPickMissingReason,
+      ));
+      pendingOut.add(PickPendingOut(
+        movementId: id,
+        productId: s.productId,
+        qty: qty,
+        bin: st.bin,
+        lot: row.lot,
+        entryDate: row.entryDate,
+        receipt: row.receipt,
       ));
     }
   }
@@ -213,5 +259,5 @@ CommitResult commitPickSession(
       to: '—',
     ));
   }
-  return CommitResult(delivered, s.qtyRequested - delivered, movements);
+  return CommitResult(delivered, s.qtyRequested - delivered, movements, pendingOut);
 }

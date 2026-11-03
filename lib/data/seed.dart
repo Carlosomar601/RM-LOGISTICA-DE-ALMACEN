@@ -315,4 +315,12 @@ List<AppUser> seedUsers() => [
         active: false,
         perms: rolePreset('Recibidor'),
       ),
+      AppUser(
+        id: 'u5',
+        name: 'Ana Torres',
+        email: 'atorres@centenotire.com',
+        role: 'Auditor',
+        active: true,
+        perms: rolePreset('Auditor'),
+      ),
     ];

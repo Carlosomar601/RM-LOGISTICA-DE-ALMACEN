@@ -12,10 +12,12 @@ import '../data/data_store.dart';
 import '../data/seed.dart';
 import '../models/admin_config.dart';
 import '../models/app_user.dart';
+import '../models/audit.dart';
 import '../models/inv_row.dart';
 import '../models/json_util.dart';
 import '../models/movement.dart';
 import '../models/order.dart';
+import '../models/pending_item.dart';
 import '../models/pick_session.dart';
 import '../models/product.dart';
 import '../models/receipt.dart';
@@ -24,9 +26,10 @@ import '../sync/dispatch_ledger.dart';
 import '../sync/sync_settings.dart';
 import '../util/clock.dart';
 import '../util/format.dart';
+import 'audit_engine.dart';
 import 'pick_engine.dart';
 
-enum AppView { dashboard, receiving, orders, picking, transfers, history, users, about }
+enum AppView { dashboard, receiving, orders, picking, transfers, audit, history, users, about }
 
 extension AppViewX on AppView {
   /// Área de permisos; null = siempre accesible.
@@ -36,6 +39,7 @@ extension AppViewX on AppView {
         AppView.orders => Area.orders,
         AppView.picking => Area.picking,
         AppView.transfers => Area.transfers,
+        AppView.audit => Area.audit,
         AppView.history => Area.history,
         AppView.users => Area.users,
         AppView.about => null,
@@ -47,6 +51,7 @@ extension AppViewX on AppView {
         AppView.orders => 'Órdenes entrantes',
         AppView.picking => 'Piqueo FIFO',
         AppView.transfers => 'Transferencias',
+        AppView.audit => 'Auditoría',
         AppView.history => 'Historial',
         AppView.users => 'Administración',
         AppView.about => 'Resumen del proyecto',
@@ -91,6 +96,8 @@ class AppState {
     required this.settings,
     required this.rolePresets,
     required this.importedLineIds,
+    List<Audit>? audits,
+    List<PendingItem>? pendingItems,
     this.currentView = AppView.dashboard,
     this.simulatedUserId,
     this.currentUserId,
@@ -107,12 +114,15 @@ class AppState {
     this.movementSeq = 1009,
     this.invSeq = kSeedInvCount + 1,
     this.stepSeq = 1,
-    this.userSeq = 5,
+    this.userSeq = 6,
     this.prefillSeq = 1,
     this.storeSeq = 4,
     this.binSeq = 1,
     this.productSeq = 11,
-  });
+    this.auditSeq = 1,
+    this.pendingSeq = 1,
+  })  : audits = audits ?? [],
+        pendingItems = pendingItems ?? [];
 
   factory AppState.seed() => AppState(
         products: seedProducts(),
@@ -173,6 +183,8 @@ class AppState {
         'bins': [for (final x in bins) x.toJson()],
         'settings': settings.toJson(),
         'importedLineIds': (importedLineIds.toList()..sort()),
+        'audits': [for (final x in audits) x.toJson()],
+        'pendingItems': [for (final x in pendingItems) x.toJson()],
         if (lastConfigApiUrl != null) 'lastConfigApiUrl': lastConfigApiUrl,
         'seq': {
           'order': orderSeq,
@@ -186,6 +198,8 @@ class AppState {
           'store': storeSeq,
           'bin': binSeq,
           'product': productSeq,
+          'audit': auditSeq,
+          'pending': pendingSeq,
         },
       };
 
@@ -216,6 +230,10 @@ class AppState {
       settings: AppSettings.fromJson(settings),
       rolePresets: {for (final r in kRoles) r: rolePreset(r)},
       importedLineIds: jStrings(j, 'importedLineIds').toSet(),
+      // Agregados después: un data.json anterior no los trae.
+      audits: j['audits'] == null ? [] : [for (final x in jList(j, 'audits')) Audit.fromJson(x)],
+      pendingItems:
+          j['pendingItems'] == null ? [] : [for (final x in jList(j, 'pendingItems')) PendingItem.fromJson(x)],
       lastConfigApiUrl: jStrOrNull(j, 'lastConfigApiUrl'),
       orderSeq: jInt(seq, 'order'),
       receiptSeq: jInt(seq, 'receipt'),
@@ -228,6 +246,8 @@ class AppState {
       storeSeq: jInt(seq, 'store'),
       binSeq: jInt(seq, 'bin'),
       productSeq: jInt(seq, 'product'),
+      auditSeq: jIntOrNull(seq, 'audit') ?? 1,
+      pendingSeq: jIntOrNull(seq, 'pending') ?? 1,
     );
   }
 
@@ -245,6 +265,8 @@ class AppState {
   AppSettings settings;
   /// Líneas de recibo ya importadas desde RM: `storeId|LineID`.
   final Set<String> importedLineIds;
+  final List<Audit> audits;
+  final List<PendingItem> pendingItems;
   final Map<String, Map<Area, bool>> rolePresets;
   AppView currentView;
   String? simulatedUserId;
@@ -265,7 +287,7 @@ class AppState {
   /// Motivo del último cierre automático, para mostrarlo en la pantalla de PIN.
   String? logoutReason;
   StoreTransferPrefill? transferPrefill;
-  int orderSeq, receiptSeq, lotSeq, tbSeq, tsSeq, movementSeq, invSeq, stepSeq, userSeq, prefillSeq, storeSeq, binSeq, productSeq;
+  int orderSeq, receiptSeq, lotSeq, tbSeq, tsSeq, movementSeq, invSeq, stepSeq, userSeq, prefillSeq, storeSeq, binSeq, productSeq, auditSeq, pendingSeq;
 
   /// Copia superficial: nueva identidad para notificar a Riverpod.
   AppState clone() => AppState(
@@ -283,6 +305,8 @@ class AppState {
         settings: settings,
         rolePresets: rolePresets,
         importedLineIds: importedLineIds,
+        audits: audits,
+        pendingItems: pendingItems,
         currentView: currentView,
         simulatedUserId: simulatedUserId,
         currentUserId: currentUserId,
@@ -304,6 +328,8 @@ class AppState {
         storeSeq: storeSeq,
         binSeq: binSeq,
         productSeq: productSeq,
+        auditSeq: auditSeq,
+        pendingSeq: pendingSeq,
       );
 
   // ---------- Selectores ----------
@@ -362,8 +388,74 @@ class AppState {
     final u = simulatedUser ?? currentUser;
     final a = v.area;
     if (u == null || a == null) return true;
+    if (v == AppView.audit) return u.can(Area.audit) || u.can(Area.auditManage);
     return u.can(a);
   }
+
+  /// Crea, cierra y revisa auditorías; resuelve PENDIENTES (Supervisor, Administrador).
+  bool get canManageAudits {
+    final u = simulatedUser ?? currentUser;
+    return u == null || u.can(Area.auditManage);
+  }
+
+  // ---------- Auditoría y PENDIENTES ----------
+
+  List<Audit> get openAudits => audits.where((a) => a.isOpen).toList();
+
+  /// Auditorías abiertas que el usuario actual puede contar (las asignadas a otro no aparecen,
+  /// salvo para quien administra auditorías).
+  List<Audit> get auditsToCount {
+    final me = currentUser;
+    return openAudits
+        .where((a) => a.assignedTo == null || me == null || a.assignedTo == me.id || canManageAudits)
+        .toList();
+  }
+
+  /// Canastas del almacén central bloqueadas por una auditoría (contándose o contadas sin cerrar).
+  Set<String> get lockedBins => {
+        for (final a in audits)
+          if (a.isOpen)
+            for (final b in a.bins)
+              if (b.locked) b.bin,
+      };
+
+  /// Auditoría que bloquea la canasta (null = libre).
+  String? lockOf(String bin) {
+    for (final a in audits) {
+      if (!a.isOpen) continue;
+      for (final b in a.bins) {
+        if (b.bin == bin && b.locked) return a.id;
+      }
+    }
+    return null;
+  }
+
+  /// Auditoría abierta que ya incluye la canasta (por contar, contando o contada).
+  String? auditHolding(String bin) {
+    for (final a in audits) {
+      if (!a.isOpen) continue;
+      for (final b in a.bins) {
+        if (b.bin == bin &&
+            (b.status == AuditBinStatus.pendiente || b.locked)) {
+          return a.id;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Canastas del almacén central que se pueden auditar (activas, sin las de recepción).
+  List<Bin> get auditableBins => bins
+      .where((b) => b.storeId == centralStore.id && b.active && !b.special && b.code != centralStore.receiveBin)
+      .toList();
+
+  /// Zonas (pasillos) de las canastas auditables.
+  List<String> get centralZones =>
+      ({for (final b in auditableBins) if (b.zone.trim().isNotEmpty) b.zone.trim()}.toList()..sort());
+
+  List<PendingItem> get openPending => pendingItems.where((p) => p.isOpen).toList();
+
+  int get pendingUnits => openPending.fold(0, (a, p) => a + p.qty);
 
   AppView firstAllowed() =>
       AppView.values.firstWhere((v) => v != AppView.about && allowed(v), orElse: () => AppView.about);
@@ -633,7 +725,7 @@ class AppNotifier extends Notifier<AppState> {
     }
   }
 
-  Movement _mv(String type, String productId, int qty, String doc, String from, String to) =>
+  Movement _mv(String type, String productId, int qty, String doc, String from, String to, {String? note}) =>
       Movement(
         id: _mvId(),
         type: type,
@@ -644,6 +736,7 @@ class AppNotifier extends Notifier<AppState> {
         dateTime: kToday,
         from: from,
         to: to,
+        note: note,
       );
 
   // ---------- Navegación ----------
@@ -691,6 +784,8 @@ class AppNotifier extends Notifier<AppState> {
     if (valid.isEmpty) return 'Agrega al menos una canasta con cantidad mayor que 0.';
     final sum = valid.fold(0, (a, r) => a + r.$2);
     if (sum > item.pending) return 'Lo asignado excede lo pendiente ($sum de ${item.pending}).';
+    final lock = _lockError([for (final (bin, _) in valid) bin]);
+    if (lock != null) return lock;
     for (final (bin, qty) in valid) {
       final existing = state.inventory.firstWhereOrNull(
           (r) => r.productId == productId && r.store == kCentral && r.bin == bin && r.qty > 0);
@@ -1227,6 +1322,7 @@ class AppNotifier extends Notifier<AppState> {
         qty: i.remaining,
         doc: o.id,
         nextId: _stepId,
+        lockedBins: state.lockedBins,
       );
     }
     _emit();
@@ -1243,6 +1339,7 @@ class AppNotifier extends Notifier<AppState> {
       qty: s.qtyRequested,
       doc: s.doc,
       nextId: _stepId,
+      lockedBins: state.lockedBins,
     );
     _emit();
   }
@@ -1264,6 +1361,7 @@ class AppNotifier extends Notifier<AppState> {
         nextMovementId: _mvId,
       );
       _logAll(res.movements);
+      _pendingFromPick(res, o.id);
       i.delivered += res.delivered;
       _recordPicked(o, i.productId, res.delivered);
       state.pickSessions.remove(key);
@@ -1285,6 +1383,7 @@ class AppNotifier extends Notifier<AppState> {
       qty: qty,
       doc: doc,
       nextId: _stepId,
+      lockedBins: state.lockedBins,
     );
     _emit();
   }
@@ -1307,6 +1406,7 @@ class AppNotifier extends Notifier<AppState> {
       nextMovementId: _mvId,
     );
     _logAll(res.movements);
+    _pendingFromPick(res, s.doc);
     state.pickSessions.remove(kSingleSessionKey);
     _emit();
     return res;
@@ -1314,25 +1414,60 @@ class AppNotifier extends Notifier<AppState> {
 
   // ---------- Acciones sobre pasos ----------
 
-  void stepPicked(String key, String stepId) {
-    final s = state.pickSessions[key];
-    if (s == null) return;
-    markPicked(s, stepId);
-    _emit();
+  /// Error si el paso está en una canasta bloqueada por auditoría.
+  String? _stepLocked(PickSession s, String stepId) {
+    final st = s.steps.firstWhereOrNull((x) => x.id == stepId);
+    final aud = st == null ? null : state.lockOf(st.bin);
+    return aud == null ? null : 'La canasta ${st!.bin} está en auditoría ($aud). Recalcula la ruta.';
   }
 
-  void stepMissingHere(String key, String stepId) {
+  String? stepPicked(String key, String stepId) {
     final s = state.pickSessions[key];
-    if (s == null) return;
-    markMissingHere(s, stepId, state.inventory, _stepId);
+    if (s == null) return null;
+    final locked = _stepLocked(s, stepId);
+    if (locked != null) return locked;
+    markPicked(s, stepId);
     _emit();
+    return null;
+  }
+
+  String? stepMissingHere(String key, String stepId) {
+    final s = state.pickSessions[key];
+    if (s == null) return null;
+    final locked = _stepLocked(s, stepId);
+    if (locked != null) return locked;
+    markMissingHere(s, stepId, state.inventory, _stepId, lockedBins: state.lockedBins);
+    _emit();
+    return null;
   }
 
   void declareShortfall(String key) {
     final s = state.pickSessions[key];
     if (s == null) return;
-    declareShortfallMissing(s, state.inventory, _stepId);
+    declareShortfallMissing(s, state.inventory, _stepId, lockedBins: state.lockedBins);
     _emit();
+  }
+
+  /// «No estaba aquí» del piqueo: lo apartado pasa a PENDIENTES con su lote y fecha.
+  void _pendingFromPick(CommitResult res, String doc) {
+    for (final o in res.pendingOut) {
+      state.pendingItems.insert(
+        0,
+        PendingItem(
+          id: _penId(),
+          productId: o.productId,
+          qty: o.qty,
+          lot: o.lot,
+          entryDate: o.entryDate,
+          receipt: o.receipt,
+          originBin: o.bin,
+          sourceDoc: doc,
+          reason: kPickMissingReason,
+          createdAt: kToday,
+          createdBy: state.actor,
+        ),
+      );
+    }
   }
 
   // ---------- Transferencias entre bins ----------
@@ -1350,6 +1485,8 @@ class AppNotifier extends Notifier<AppState> {
     if (qty <= 0) return 'Ingresa una cantidad válida (mayor que 0).';
     if (qty > src.qty) return 'La cantidad excede lo disponible en ${src.bin} (${src.qty}).';
     if (src.bin == destBin) return 'El bin destino debe ser diferente al de origen.';
+    final lock = _lockError([src.bin, destBin]);
+    if (lock != null) return lock;
     src.qty -= qty;
     final dest = state.inventory.firstWhereOrNull((r) =>
         r.id != src.id &&
@@ -1404,12 +1541,14 @@ class AppNotifier extends Notifier<AppState> {
     if (fromStore == toStore) {
       return (error: 'La tienda origen y la tienda destino deben ser diferentes.', id: null);
     }
-    final avail = state.storeQty(productId, fromStore);
+    final locked = fromStore == kCentral ? state.lockedBins : const <String>{};
+    final rows = fifoSorted(state.rowsOf(productId).where((r) => r.store == fromStore && !locked.contains(r.bin)));
+    final avail = rows.fold(0, (a, r) => a + r.qty);
     if (qty < 1 || qty > avail) {
-      return (error: 'Cantidad inválida: $fromStore tiene $avail unidad(es) de este producto.', id: null);
+      final why = locked.isEmpty ? '' : ' (sin contar canastas en auditoría)';
+      return (error: 'Cantidad inválida: $fromStore tiene $avail unidad(es) de este producto$why.', id: null);
     }
     var remaining = qty;
-    final rows = fifoSorted(state.rowsOf(productId).where((r) => r.store == fromStore));
     for (final r in rows) {
       if (remaining <= 0) break;
       final take = min(r.qty, remaining);
@@ -1776,6 +1915,13 @@ class AppNotifier extends Notifier<AppState> {
     return null;
   }
 
+  /// Una canasta del almacén central incluida en una auditoría abierta no se edita.
+  String? _binAdminLock(Bin b) {
+    if (b.storeId != state.centralStore.id) return null;
+    final aud = state.auditHolding(b.code);
+    return aud == null ? null : 'La canasta ${b.code} está en la auditoría $aud.';
+  }
+
   bool binHasStock(Bin b) {
     final st = state.stores.firstWhereOrNull((s) => s.id == b.storeId);
     if (st == null) return false;
@@ -1786,6 +1932,8 @@ class AppNotifier extends Notifier<AppState> {
       {String? code, String? zone, int? capacity, bool clearCapacity = false, bool? active}) {
     final b = state.bins.firstWhereOrNull((x) => x.id == id);
     if (b == null) return 'Canasta no encontrada.';
+    final lock = _binAdminLock(b);
+    if (lock != null && ((code != null && code.trim().toUpperCase() != b.code) || active == false)) return lock;
     if (code != null && code.trim().toUpperCase() != b.code) {
       final c = code.trim().toUpperCase();
       if (b.special) return 'Esta canasta es de recepción y no se puede renombrar.';
@@ -1812,6 +1960,8 @@ class AppNotifier extends Notifier<AppState> {
     final b = state.bins.firstWhereOrNull((x) => x.id == id);
     if (b == null) return null;
     if (b.special) return 'Las canastas de recepción no se pueden eliminar.';
+    final lock = _binAdminLock(b);
+    if (lock != null) return lock;
     if (binHasStock(b)) return 'Tiene inventario; muévelo antes de eliminar.';
     state.bins.remove(b);
     _emit();
@@ -1846,6 +1996,500 @@ class AppNotifier extends Notifier<AppState> {
     s.staleDays = stale;
     if (companyName != null) s.companyName = companyName;
     if (warehouseName != null) s.warehouseName = warehouseName;
+    _emit();
+    return null;
+  }
+
+  // ---------- Bloqueo por auditoría ----------
+
+  /// Error si alguna de las canastas (del almacén central) está bloqueada por una auditoría.
+  String? _lockError(Iterable<String> bins) {
+    for (final b in bins) {
+      final aud = state.lockOf(b);
+      if (aud != null) return 'La canasta $b está en auditoría ($aud); espera a que se cierre.';
+    }
+    return null;
+  }
+
+  // ---------- Transferencia de canasta completa ----------
+
+  /// Mueve todo lo que hay en [from] a [to] conservando lote, fecha y recibo de cada fila.
+  /// Devuelve error o null.
+  String? binTransferAll({required String from, required String to, String obs = ''}) {
+    final src = from.trim().toUpperCase();
+    final dst = to.trim().toUpperCase();
+    final codes = state.centralBinCodes;
+    if (!codes.contains(src)) return 'La canasta de origen $src no existe o está inactiva.';
+    if (!codes.contains(dst)) return 'La canasta destino $dst no existe o está inactiva.';
+    if (src == dst) return 'La canasta destino debe ser diferente a la de origen.';
+    final lock = _lockError([src, dst]);
+    if (lock != null) return lock;
+    final rows = state.inventory.where((r) => r.store == kCentral && r.bin == src && r.qty > 0).toList();
+    if (rows.isEmpty) return 'La canasta $src está vacía.';
+    final byProduct = <String, int>{};
+    for (final r in rows) {
+      r.bin = dst;
+      byProduct[r.productId] = (byProduct[r.productId] ?? 0) + r.qty;
+    }
+    final extra = obs.trim();
+    final note = 'Canasta completa $src → $dst${extra.isEmpty ? '' : ' · $extra'}';
+    for (final e in byProduct.entries) {
+      final id = 'TB-${state.tbSeq++}';
+      state.binTransfers.insert(
+        0,
+        BinTransfer(
+          id: id,
+          productId: e.key,
+          qty: e.value,
+          from: src,
+          to: dst,
+          user: state.actor,
+          dateTime: kToday,
+          obs: note,
+        ),
+      );
+      _log(_mv('transfer-bin', e.key, e.value, id, '$kCentral / $src', '$kCentral / $dst', note: note));
+    }
+    _emit();
+    return null;
+  }
+
+  // ---------- Auditoría de canastas ----------
+
+  String _penId() => 'PEN-${state.pendingSeq++}';
+
+  Audit? _findAudit(String id) => state.audits.firstWhereOrNull((a) => a.id == id);
+
+  /// Crea una auditoría de una o varias canastas ([bins]) o de una zona completa ([zone]).
+  ({String? error, String? id}) createAudit({List<String> bins = const [], String? zone, String? assignedTo}) {
+    final auditable = {for (final b in state.auditableBins) b.code: b};
+    final List<String> codes;
+    final String scope;
+    if (zone != null && zone.trim().isNotEmpty) {
+      final z = zone.trim();
+      codes = [for (final b in state.auditableBins) if (b.zone.trim() == z) b.code];
+      if (codes.isEmpty) return (error: 'La zona $z no tiene canastas activas.', id: null);
+      scope = 'Zona: $z';
+    } else {
+      codes = {for (final b in bins) b.trim().toUpperCase()}.where((b) => b.isNotEmpty).toList();
+      if (codes.isEmpty) return (error: 'Elige al menos una canasta o una zona.', id: null);
+      for (final c in codes) {
+        if (!auditable.containsKey(c)) {
+          return (error: 'La canasta $c no existe, está inactiva o es de recepción.', id: null);
+        }
+      }
+      scope = codes.length == 1 ? 'Canasta ${codes.first}' : '${codes.length} canastas';
+    }
+    for (final c in codes) {
+      final aud = state.auditHolding(c);
+      if (aud != null) return (error: 'La canasta $c ya está en la auditoría $aud.', id: null);
+    }
+    if (assignedTo != null && !state.users.any((u) => u.id == assignedTo && u.active)) {
+      return (error: 'El auditor elegido no existe o está inactivo.', id: null);
+    }
+    final id = 'AUD-${state.auditSeq++}';
+    state.audits.insert(
+      0,
+      Audit(
+        id: id,
+        scopeLabel: scope,
+        createdBy: state.actor,
+        createdAt: kToday,
+        assignedTo: assignedTo,
+        bins: [for (final c in codes) AuditBin(bin: c, zone: auditable[c]!.zone)],
+      ),
+    );
+    _emit();
+    return (error: null, id: id);
+  }
+
+  /// El auditor escanea la canasta: queda bloqueada y se toma la foto de lo que el sistema tiene.
+  String? startBinCount(String auditId, String scannedCode) {
+    final a = _findAudit(auditId);
+    if (a == null || !a.isOpen) return 'La auditoría no está abierta.';
+    final me = state.currentUser;
+    if (a.assignedTo != null && me != null && a.assignedTo != me.id && !state.canManageAudits) {
+      final who = state.users.firstWhereOrNull((u) => u.id == a.assignedTo)?.name ?? 'otro auditor';
+      return '${a.id} está asignada a $who.';
+    }
+    final code = scannedCode.trim().toUpperCase();
+    final ab = a.binOf(code);
+    if (ab == null) return 'La canasta $code no es parte de ${a.id}.';
+    if (ab.status == AuditBinStatus.contando) {
+      if (ab.auditor == state.actor) return null; // retoma su conteo
+      return 'La canasta $code la está contando ${ab.auditor}.';
+    }
+    if (ab.status != AuditBinStatus.pendiente) return 'La canasta $code ya fue contada.';
+    for (final s in state.pickSessions.values) {
+      if (s.steps.any((st) => st.bin == code && st.status == StepStatus.picked)) {
+        return 'Hay mercancía recogida de $code sin confirmar en ${s.doc}. Confirma ese piqueo primero.';
+      }
+    }
+    final rows = fifoSorted(state.inventory.where((r) => r.store == kCentral && r.bin == code && r.qty > 0));
+    ab.expected = [
+      for (final r in rows)
+        AuditExpected(
+          invId: r.id,
+          productId: r.productId,
+          qty: r.qty,
+          lot: r.lot,
+          entryDate: r.entryDate,
+          receipt: r.receipt,
+        ),
+    ];
+    ab.status = AuditBinStatus.contando;
+    ab.auditor = state.actor;
+    ab.startedAt = kToday;
+    a.status = AuditStatus.enCurso;
+    _rerouteAround(code);
+    _emit();
+    return null;
+  }
+
+  /// Los pasos por recoger en una canasta recién bloqueada se recalculan hacia otras canastas.
+  void _rerouteAround(String bin) {
+    final locked = state.lockedBins;
+    for (final s in state.pickSessions.values) {
+      final before = s.steps.length;
+      s.steps.removeWhere((st) => st.bin == bin && st.status == StepStatus.pending);
+      if (s.steps.length != before) reflowSession(s, state.inventory, _stepId, lockedBins: locked);
+    }
+  }
+
+  AuditBin? _countingBin(String auditId, String bin) {
+    final ab = _findAudit(auditId)?.binOf(bin);
+    if (ab == null || ab.status != AuditBinStatus.contando || ab.auditor != state.actor) return null;
+    return ab;
+  }
+
+  Product? productByCode(String code) {
+    final c = code.trim().toLowerCase();
+    return state.products.firstWhereOrNull((p) => p.code.toLowerCase() == c);
+  }
+
+  /// Suma [qty] unidades del producto escaneado al conteo. Devuelve error o null.
+  String? addCount(String auditId, String bin, String productCode, int qty) {
+    final ab = _countingBin(auditId, bin);
+    if (ab == null) return 'Escanea primero la canasta.';
+    if (ab.recountIds != null) return 'El primer conteo ya terminó; completa el reconteo.';
+    final p = productByCode(productCode);
+    if (p == null) return 'No existe un producto con código «${productCode.trim()}».';
+    if (qty < 1) return 'La cantidad debe ser mayor que 0.';
+    ab.counts[p.id] = (ab.counts[p.id] ?? 0) + qty;
+    _emit();
+    return null;
+  }
+
+  /// Corrige la cantidad contada (0 = quitar la línea).
+  String? setCount(String auditId, String bin, String productId, int qty) {
+    final ab = _countingBin(auditId, bin);
+    if (ab == null) return 'Escanea primero la canasta.';
+    if (ab.recountIds != null) return 'El primer conteo ya terminó; completa el reconteo.';
+    if (qty < 0) return 'La cantidad no puede ser negativa.';
+    if (qty == 0) {
+      ab.counts.remove(productId);
+      ab.notes.remove(productId);
+    } else {
+      ab.counts[productId] = qty;
+    }
+    _emit();
+    return null;
+  }
+
+  void setCountNote(String auditId, String bin, String productId, String note) {
+    final ab = _countingBin(auditId, bin);
+    if (ab == null) return;
+    if (note.trim().isEmpty) {
+      ab.notes.remove(productId);
+    } else {
+      ab.notes[productId] = note.trim();
+    }
+    _emit();
+  }
+
+  /// Termina el primer conteo. Devuelve los productos a recontar (vacío = la canasta quedó contada).
+  ({String? error, List<String> recount}) finishBinCount(String auditId, String bin) {
+    final ab = _countingBin(auditId, bin);
+    if (ab == null) return (error: 'Escanea primero la canasta.', recount: const <String>[]);
+    if (ab.recountIds != null) return (error: null, recount: ab.recountIds!);
+    final diffs = diffProducts(ab);
+    if (diffs.isEmpty) {
+      _markCounted(ab);
+    } else {
+      ab.recountIds = diffs;
+    }
+    _emit();
+    return (error: null, recount: diffs);
+  }
+
+  /// Reconteo (una sola vez) de las líneas que difieren. [values]: productId → unidades.
+  /// Con [skip] se confirma el primer conteo sin recontar.
+  String? submitRecount(String auditId, String bin, Map<String, int> values, {bool skip = false}) {
+    final ab = _countingBin(auditId, bin);
+    if (ab == null || ab.recountIds == null) return 'No hay reconteo pendiente en esta canasta.';
+    if (!skip) {
+      final r = <String, int>{};
+      for (final id in ab.recountIds!) {
+        final v = values[id];
+        if (v == null || v < 0) return 'Ingresa la cantidad recontada de cada producto (0 si no está).';
+        r[id] = v;
+      }
+      ab.recounts = r;
+    }
+    _markCounted(ab);
+    _emit();
+    return null;
+  }
+
+  void _markCounted(AuditBin ab) {
+    ab.status = AuditBinStatus.contada;
+    ab.countedAt = kToday;
+    ab.lines = computeLines(ab);
+  }
+
+  AuditLine? _line(String auditId, String bin, String productId) {
+    final ab = _findAudit(auditId)?.binOf(bin);
+    if (ab == null || ab.status != AuditBinStatus.contada) return null;
+    return ab.lines.firstWhereOrNull((l) => l.productId == productId);
+  }
+
+  void setLineReason(String auditId, String bin, String productId, String? reason, {String? note}) {
+    final l = _line(auditId, bin, productId);
+    if (l == null || l.isOk) return;
+    l.reason = reason;
+    final n = note?.trim() ?? '';
+    l.reasonNote = n.isEmpty ? null : n;
+    _emit();
+  }
+
+  /// Identifica un sobrante con un pendiente abierto del mismo producto (null = quitar).
+  String? matchSurplusToPending(String auditId, String bin, String productId, String? pendingId) {
+    final l = _line(auditId, bin, productId);
+    if (l == null) return 'Línea no encontrada.';
+    if (l.result != AuditResult.sobrante && l.result != AuditResult.noRegistrado) {
+      return 'Solo un sobrante se puede identificar con un pendiente.';
+    }
+    if (pendingId != null) {
+      final p = state.pendingItems.firstWhereOrNull((x) => x.id == pendingId);
+      if (p == null || !p.isOpen || p.productId != productId) {
+        return 'Ese pendiente no está abierto o es de otro producto.';
+      }
+    }
+    l.matchedPendingId = pendingId;
+    _emit();
+    return null;
+  }
+
+  /// Cierra una canasta contada: aplica faltantes (a PENDIENTES) y sobrantes, y la desbloquea.
+  String? closeAuditBin(String auditId, String bin) {
+    final a = _findAudit(auditId);
+    final ab = a?.binOf(bin);
+    if (a == null || ab == null) return 'Canasta no encontrada.';
+    final err = _closeBin(a, ab);
+    if (err != null) return err;
+    _finishAuditIfDone(a);
+    _emit();
+    return null;
+  }
+
+  String? _closeBin(Audit a, AuditBin ab) {
+    if (ab.status != AuditBinStatus.contada) return 'La canasta ${ab.bin} todavía no está contada.';
+    final ready = linesReadyToClose(ab.lines);
+    if (ready != null) return '${ab.bin}: $ready';
+    for (final l in ab.lines) {
+      if (l.isOk) continue;
+      final why = l.reason!;
+      final note = [why, if (l.reasonNote != null) l.reasonNote!].join(' · ');
+      if (l.diff < 0) {
+        final portions = takeOldestFromBin(state.inventory, kCentral, ab.bin, l.productId, -l.diff);
+        for (final p in portions) {
+          final pen = PendingItem(
+            id: _penId(),
+            productId: l.productId,
+            qty: p.qty,
+            lot: p.lot,
+            entryDate: p.entryDate,
+            receipt: p.receipt,
+            originBin: ab.bin,
+            sourceDoc: a.id,
+            reason: why,
+            note: l.reasonNote,
+            createdAt: kToday,
+            createdBy: state.actor,
+          );
+          state.pendingItems.insert(0, pen);
+          l.pendingIds.add(pen.id);
+          _log(_mv('a-pendientes', l.productId, p.qty, a.id, '$kCentral / ${ab.bin}', kPendingArea, note: note));
+        }
+      } else {
+        var extra = l.diff;
+        final pen = l.matchedPendingId == null
+            ? null
+            : state.pendingItems.firstWhereOrNull((x) => x.id == l.matchedPendingId && x.isOpen);
+        if (pen != null && pen.productId == l.productId) {
+          final take = min(extra, pen.qty);
+          _foundPending(pen, ab.bin, take, note: 'Encontrado en auditoría ${a.id}');
+          extra -= take;
+        }
+        if (extra > 0) {
+          state.inventory.add(InvRow(
+            id: _invId(),
+            productId: l.productId,
+            store: kCentral,
+            bin: ab.bin,
+            qty: extra,
+            entryDate: kToday,
+            receipt: a.id,
+            lot: '—',
+            user: state.actor,
+          ));
+          _log(_mv('auditoria-sobrante', l.productId, extra, a.id, a.id, '$kCentral / ${ab.bin}', note: note));
+        }
+      }
+    }
+    ab.status = AuditBinStatus.cerrada;
+    ab.closedAt = kToday;
+    return null;
+  }
+
+  void _finishAuditIfDone(Audit a) {
+    final done = a.bins.every((b) => b.status == AuditBinStatus.cerrada || b.status == AuditBinStatus.cancelada);
+    if (!done) return;
+    a.status = a.bins.any((b) => b.status == AuditBinStatus.cerrada) ? AuditStatus.cerrada : AuditStatus.cancelada;
+    a.closedAt = kToday;
+    a.closedBy = state.actor;
+  }
+
+  /// Cierra la auditoría: cierra las canastas contadas y cancela las que no se contaron.
+  String? closeAudit(String auditId) {
+    final a = _findAudit(auditId);
+    if (a == null || !a.isOpen) return 'La auditoría no está abierta.';
+    final counting = a.bins.where((b) => b.status == AuditBinStatus.contando).map((b) => b.bin).toList();
+    if (counting.isNotEmpty) return 'Todavía se está contando: ${counting.join(', ')}.';
+    for (final b in a.bins.where((b) => b.status == AuditBinStatus.contada)) {
+      final ready = linesReadyToClose(b.lines);
+      if (ready != null) return '${b.bin}: $ready';
+    }
+    for (final b in a.bins) {
+      if (b.status == AuditBinStatus.contada) {
+        _closeBin(a, b);
+      } else if (b.status == AuditBinStatus.pendiente) {
+        b.status = AuditBinStatus.cancelada;
+      }
+    }
+    _finishAuditIfDone(a);
+    _emit();
+    return null;
+  }
+
+  /// Cancela la auditoría sin tocar el inventario (solo si ninguna canasta se cerró).
+  String? cancelAudit(String auditId) {
+    final a = _findAudit(auditId);
+    if (a == null || !a.isOpen) return 'La auditoría no está abierta.';
+    if (a.bins.any((b) => b.status == AuditBinStatus.cerrada)) {
+      return 'Ya hay canastas cerradas; cierra la auditoría en lugar de cancelarla.';
+    }
+    for (final b in a.bins) {
+      b.status = AuditBinStatus.cancelada;
+    }
+    a.status = AuditStatus.cancelada;
+    a.closedAt = kToday;
+    a.closedBy = state.actor;
+    _emit();
+    return null;
+  }
+
+  // ---------- PENDIENTES ----------
+
+  /// Separa [qty] unidades de un pendiente: si es parte, crea un registro nuevo para esa parte.
+  PendingItem _splitPending(PendingItem p, int qty) {
+    if (qty >= p.qty) return p;
+    p.qty -= qty;
+    final part = PendingItem(
+      id: _penId(),
+      productId: p.productId,
+      qty: qty,
+      lot: p.lot,
+      entryDate: p.entryDate,
+      receipt: p.receipt,
+      originBin: p.originBin,
+      sourceDoc: p.sourceDoc,
+      reason: p.reason,
+      note: p.note,
+      createdAt: p.createdAt,
+      createdBy: p.createdBy,
+    );
+    state.pendingItems.insert(state.pendingItems.indexOf(p) + 1, part);
+    return part;
+  }
+
+  void _foundPending(PendingItem p, String bin, int qty, {String? note}) {
+    final part = _splitPending(p, qty);
+    part.status = PendingStatus.encontrado;
+    part.resolvedAt = kToday;
+    part.resolvedBy = state.actor;
+    part.foundBin = bin;
+    part.resolutionNote = note;
+    final same = state.inventory.firstWhereOrNull((r) =>
+        r.store == kCentral &&
+        r.bin == bin &&
+        r.productId == part.productId &&
+        r.lot == part.lot &&
+        r.receipt == part.receipt &&
+        r.entryDate == part.entryDate);
+    if (same != null) {
+      same.qty += qty;
+    } else {
+      state.inventory.add(InvRow(
+        id: _invId(),
+        productId: part.productId,
+        store: kCentral,
+        bin: bin,
+        qty: qty,
+        entryDate: part.entryDate,
+        receipt: part.receipt,
+        lot: part.lot,
+        user: state.actor,
+      ));
+    }
+    _log(_mv('pendiente-encontrado', part.productId, qty, part.id, kPendingArea, '$kCentral / $bin', note: note));
+  }
+
+  String? _checkPending(PendingItem? p, int qty) {
+    if (p == null || !p.isOpen) return 'El pendiente ya no está abierto.';
+    if (qty < 1 || qty > p.qty) return 'La cantidad debe estar entre 1 y ${p.qty}.';
+    return null;
+  }
+
+  /// Encontrado: vuelve a una canasta con su lote y fecha originales.
+  String? resolvePendingFound(String id, String bin, int qty) {
+    final p = state.pendingItems.firstWhereOrNull((x) => x.id == id);
+    final err = _checkPending(p, qty);
+    if (err != null) return err;
+    final code = bin.trim().toUpperCase();
+    if (!state.centralBinCodes.contains(code)) return 'La canasta $code no existe o está inactiva.';
+    final lock = _lockError([code]);
+    if (lock != null) return lock;
+    _foundPending(p!, code, qty);
+    _emit();
+    return null;
+  }
+
+  /// Da de baja un pendiente con su motivo.
+  String? writeOffPending(String id, int qty, String reason, {String note = ''}) {
+    final p = state.pendingItems.firstWhereOrNull((x) => x.id == id);
+    final err = _checkPending(p, qty);
+    if (err != null) return err;
+    if (reason.trim().isEmpty) return 'Elige el motivo de la baja.';
+    final n = note.trim();
+    if (reason == kReasonOther && n.isEmpty) return 'El motivo «Otro» necesita una nota.';
+    final part = _splitPending(p!, qty);
+    part.status = PendingStatus.baja;
+    part.resolvedAt = kToday;
+    part.resolvedBy = state.actor;
+    part.resolutionReason = reason;
+    part.resolutionNote = n.isEmpty ? null : n;
+    _log(_mv('baja', part.productId, qty, part.id, kPendingArea, 'Baja', note: [reason, if (n.isNotEmpty) n].join(' · ')));
     _emit();
     return null;
   }

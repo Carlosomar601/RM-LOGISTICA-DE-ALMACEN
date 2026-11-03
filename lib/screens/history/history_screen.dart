@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/movement.dart';
+import '../../models/tone.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../../util/format.dart';
@@ -32,7 +33,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           eyebrow: 'Trazabilidad',
           title: 'Historial de movimientos',
           subtitle:
-              'Entradas, piqueos, transferencias, recepciones, ajustes y discrepancias — con documento, usuario, fecha y hora.',
+              'Entradas, piqueos, transferencias, recepciones, auditorías, pendientes y ajustes — con documento, motivo, usuario, fecha y hora.',
         ),
         SectionCard(
           title: 'Movimientos',
@@ -68,12 +69,21 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             rows: [
               for (final m in rows)
                 TRow([
-                  AppBadge(kMovementTypes[m.type]?.label ?? m.type, tone: kMovementTypes[m.type]!.tone),
+                  AppBadge(kMovementTypes[m.type]?.label ?? m.type, tone: kMovementTypes[m.type]?.tone ?? Tone.neutral),
                   tMono(context, s.product(m.productId).code, weight: FontWeight.w600),
                   tMono(context, m.doc, muted: true),
                   tMono(context, '${m.qty}', weight: FontWeight.w600, color: m.qty < 0 ? c.crit : null),
                   tText(context, m.from, maxLines: 1),
-                  tText(context, m.to, maxLines: 1),
+                  m.note == null
+                      ? tText(context, m.to, maxLines: 1)
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            tText(context, m.to, maxLines: 1),
+                            tText(context, m.note!, muted: true, maxLines: 2),
+                          ],
+                        ),
                   tText(context, m.user, maxLines: 1),
                   tText(context, fmtDateTime(m.dateTime), maxLines: 1),
                 ]),

@@ -22,7 +22,7 @@ Si `flutter` no está en el PATH, usa la ruta completa: `& "D:\FLUTTER SDK\flutt
 Otras tareas:
 
 ```powershell
-flutter test                   # 149 pruebas: motor FIFO, estado, RM, sesión, datos guardados, respaldos, overflow a 360/768/1440 px
+flutter test                   # 198 pruebas: motor FIFO, auditoría, estado, RM, sesión, datos guardados, respaldos, overflow a 360/768/1440 px
 flutter analyze
 flutter test integration_test/rm_import_live_test.dart -d windows   # E2E contra la API real (localhost:8180, solo lectura)
 flutter build web              # salida en build\web
@@ -74,6 +74,32 @@ cada 2 días), días a recuperar al abrir y botón *Sincronizar ahora*. Trae rec
 cada tienda con API. Corre solo con la app abierta (la app arranca con Windows) y al abrirla si la frecuencia es automática.
 La configuración se guarda en `%APPDATA%\RetailManager\PiqueoFIFO\settings.json`.
 
+## Auditoría de canastas y PENDIENTES
+
+Sección **Auditoría** (permisos *Auditoría: contar* y *Auditoría: crear, cerrar, pendientes y reporte*; rol nuevo
+**Auditor**, que solo cuenta). Un users.json anterior recibe las áreas nuevas según el rol (Administrador y Supervisor).
+
+- **Crear** (Supervisor/Administrador): una canasta, varias o una **zona completa** (la zona de Administración →
+  Canastas, p. ej. «Pasillo 1»). Se puede asignar a un auditor. Una canasta no entra en dos auditorías abiertas.
+- **Contar** (a ciegas): el auditor escanea el código de la canasta y queda **bloqueada** — el piqueo la salta (los pasos
+  por recoger se reubican), y no se transfiere, recibe, renombra ni desactiva. Luego escanea cada producto (cada lectura
+  suma la cantidad indicada, 1 por defecto). Nunca ve la cantidad esperada. Al terminar, si algo no cuadra se le pide
+  **un reconteo** de esas líneas (sin decirle cuánto esperaba). No se puede empezar si hay mercancía recogida de esa
+  canasta en un piqueo sin confirmar.
+- **Cerrar**: cada producto queda OK, FALTANTE, NO ESTÁ, SOBRANTE o NO REGISTRADO, y **toda diferencia exige motivo**
+  (error de piqueo, dañado, perdido, en otra canasta, error de recibo u otro con nota). Lo que falta sale de las filas
+  más antiguas y pasa a **PENDIENTES** con su lote, recibo y fecha; lo que sobra se suma a la canasta (lote «—», recibo
+  AUD-n) o, si se identifica con un pendiente abierto, vuelve con el lote y fecha de ese pendiente. Al cerrar, la canasta
+  se desbloquea; las no contadas se cancelan.
+- **Pendientes**: no cuentan como existencia ni se piquean. Administración los marca como **encontrados** (en la misma
+  canasta o en otra, total o parcial; conservan lote y fecha, así el FIFO no cambia) o los **da de baja** con motivo.
+- **Piqueo**: «No está aquí» ya no descuenta como discrepancia; al confirmar, lo que no estaba pasa a PENDIENTES.
+- **Transferencias → Canasta completa**: mueve todo el contenido de una canasta a otra conservando lote, recibo y fecha
+  de cada fila.
+- **Reporte**: exactitud por línea y por unidades de las canastas cerradas, por canasta, zona, auditor y motivo, por
+  periodo. Todo queda en el Historial (tipos *A pendientes*, *Sobrante auditoría*, *Pendiente encontrado*, *Baja*, con
+  el motivo).
+
 ## Inicio de sesión (PIN)
 
 La app abre en una pantalla de PIN: cada empleado entra con su **PIN de 4 dígitos** (teclado en pantalla o físico) y
@@ -87,7 +113,7 @@ lateral (en pantallas angostas, en el círculo con las iniciales), junto a *Camb
   compartido por todas las cuentas de Windows del PC. Cada inicio, cierre, PIN incorrecto y bloqueo se anota en
   `audit.log` (misma carpeta) y se ve en Administración → Usuarios → *Actividad de sesiones*.
 - Sin `users.json` (solo al desarrollar con `flutter run`) se usan los usuarios de demostración: administrador 1111,
-  supervisora 2222, piqueador 3333. En un PC instalado eso nunca ocurre: el instalador crea el primer administrador.
+  supervisora 2222, piqueador 3333, auditora 5555. En un PC instalado eso nunca ocurre: el instalador crea el primer administrador.
 
 ## Datos y respaldos
 

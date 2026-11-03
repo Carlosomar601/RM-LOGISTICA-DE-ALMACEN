@@ -12,6 +12,7 @@ class Movement {
     required this.dateTime,
     required this.from,
     required this.to,
+    this.note,
   });
 
   final String id; // "MV-1000+"
@@ -24,6 +25,9 @@ class Movement {
   final String from;
   final String to;
 
+  /// Motivo u observación (auditoría, pendientes). null = sin nota.
+  final String? note;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'type': type,
@@ -34,6 +38,7 @@ class Movement {
         'dateTime': dateTime.toIso8601String(),
         'from': from,
         'to': to,
+        if (note != null) 'note': note,
       };
 
   factory Movement.fromJson(Map j) => Movement(
@@ -46,6 +51,7 @@ class Movement {
         dateTime: jDate(j, 'dateTime'),
         from: jStr(j, 'from'),
         to: jStr(j, 'to'),
+        note: jStrOrNull(j, 'note'),
       );
 }
 
@@ -65,6 +71,10 @@ const kMovementTypes = <String, MovementType>{
   'discrepancia': MovementType('discrepancia', Tone.crit, 'Discrepancia'),
   'no-encontrado': MovementType('no-encontrado', Tone.crit, 'No encontrado'),
   'ajuste': MovementType('ajuste', Tone.neutral, 'Ajuste'),
+  'a-pendientes': MovementType('a-pendientes', Tone.warn, 'A pendientes'),
+  'auditoria-sobrante': MovementType('auditoria-sobrante', Tone.accent, 'Sobrante auditoría'),
+  'pendiente-encontrado': MovementType('pendiente-encontrado', Tone.good, 'Pendiente encontrado'),
+  'baja': MovementType('baja', Tone.crit, 'Baja'),
 };
 
 /// Filtros del Historial (key null = todos).
@@ -78,4 +88,8 @@ const kHistoryFilters = <(String?, String)>[
   ('discrepancia', 'Discrepancias en piqueo'),
   ('no-encontrado', 'No encontrado en almacén'),
   ('ajuste', 'Ajustes'),
+  ('a-pendientes', 'Enviado a PENDIENTES'),
+  ('auditoria-sobrante', 'Sobrantes de auditoría'),
+  ('pendiente-encontrado', 'Pendientes encontrados'),
+  ('baja', 'Bajas de pendientes'),
 ];

@@ -61,11 +61,13 @@ class PickStepsView extends ConsumerWidget {
     if (s == null) return const SizedBox.shrink();
     final n = ref.read(appProvider.notifier);
     final c = context.c;
+    final locked = state.lockedBins;
 
     final rows = <TRow>[];
     for (var i = 0; i < s.steps.length; i++) {
       final st = s.steps[i];
       final missing = st.status == StepStatus.missingHere;
+      final inAudit = st.status == StepStatus.pending && locked.contains(st.bin);
       rows.add(TRow(
         [
           RankCircle(i + 1),
@@ -76,29 +78,38 @@ class PickStepsView extends ConsumerWidget {
           tMono(context, '${st.available}'),
           tMono(context, '${st.take}', weight: FontWeight.w700, color: missing ? c.inkMuted : c.accent),
           switch (st.status) {
+            StepStatus.pending when inAudit => const AppBadge('En auditoría', tone: Tone.crit),
             StepStatus.pending => const AppBadge('Por verificar', tone: Tone.warn),
             StepStatus.picked => const AppBadge('Recogido', tone: Tone.good),
             StepStatus.missingHere => const AppBadge('No estaba aquí', tone: Tone.crit),
           },
-          if (st.status == StepStatus.pending)
+          if (inAudit)
+            tText(context, 'Canasta bloqueada: recalcula la ruta', muted: true)
+          else if (st.status == StepStatus.pending)
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: [
                 FilledButton(
                   style: compactFilled(),
-                  onPressed: () => n.stepPicked(sessionKey, st.id),
+                  onPressed: () {
+                    final err = n.stepPicked(sessionKey, st.id);
+                    if (err != null) showToast(ref, err);
+                  },
                   child: const Text('✔ Recogido'),
                 ),
                 OutlinedButton(
                   style: compactOutlined(fg: c.crit),
-                  onPressed: () => n.stepMissingHere(sessionKey, st.id),
+                  onPressed: () {
+                    final err = n.stepMissingHere(sessionKey, st.id);
+                    if (err != null) showToast(ref, err);
+                  },
                   child: const Text('No está aquí'),
                 ),
               ],
             )
           else
-            tText(context, st.status == StepStatus.picked ? 'Verificado' : 'Se ajustará por conteo', muted: true),
+            tText(context, st.status == StepStatus.picked ? 'Verificado' : 'Pasa a PENDIENTES', muted: true),
         ],
         opacity: missing ? 0.5 : 1,
       ));

@@ -110,7 +110,8 @@ void main() {
     expect(find.text('Piqueo de orden OV-10501 confirmado (parcial — hay faltantes declarados)'), findsOneWidget);
     expect(s.orders.firstWhere((o) => o.id == 'OV-10501').status, 'parcial');
     final types = s.history.take(8).map((m) => m.type).toSet();
-    expect(types.containsAll({'piqueo', 'discrepancia', 'no-encontrado'}), isTrue);
+    expect(types.containsAll({'piqueo', 'a-pendientes', 'no-encontrado'}), isTrue);
+    expect(s.openPending, isNotEmpty);
     await t.pump(const Duration(seconds: 3));
   });
 

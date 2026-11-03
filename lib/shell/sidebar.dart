@@ -17,6 +17,7 @@ String? navBadge(AppState s, AppView v) => switch (v) {
       AppView.dashboard => '${s.products.length}',
       AppView.receiving => '${s.pendingReceipts.length}',
       AppView.orders => '${s.openOrders.length}',
+      AppView.audit => '${s.auditsToCount.length}',
       AppView.history => '${s.history.length}',
       AppView.users => '${s.users.length}',
       _ => null,

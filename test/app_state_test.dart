@@ -106,7 +106,14 @@ void main() {
     final o = s().orders.firstWhere((o) => o.id == 'OV-10501');
     expect(o.status, 'parcial');
     final types = s().history.map((m) => m.type).toSet();
-    expect(types.containsAll({'piqueo', 'discrepancia', 'no-encontrado'}), isTrue);
+    expect(types.containsAll({'piqueo', 'a-pendientes', 'no-encontrado'}), isTrue);
+    // «No está aquí» no se pierde: queda en PENDIENTES con su lote y fecha.
+    final pen = s().openPending.single;
+    expect(pen.productId, 'p6');
+    expect(pen.originBin, 'B-01-02');
+    expect(pen.qty, 11);
+    expect(pen.sourceDoc, 'OV-10501');
+    expect(s().pendingUnits, 11);
   });
 
   test('simulación RBAC: Juan Nieves (Piqueador)', () {

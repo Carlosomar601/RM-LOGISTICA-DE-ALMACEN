@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../screens/about/about_screen.dart';
+import '../screens/audit/audit_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/history/history_screen.dart';
 import '../screens/orders/orders_screen.dart';
@@ -57,6 +58,7 @@ class _Content extends StatelessWidget {
         AppView.orders => const OrdersScreen(),
         AppView.picking => const PickingScreen(),
         AppView.transfers => const TransfersScreen(),
+        AppView.audit => const AuditScreen(),
         AppView.history => const HistoryScreen(),
         AppView.users => const AdminScreen(),
         AppView.about => const AboutScreen(),

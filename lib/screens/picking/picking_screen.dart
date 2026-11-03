@@ -30,7 +30,7 @@ Widget sessionStatusPill(PickSession s) {
 String sessionNote(PickSession s) {
   final sf = s.shortfall;
   if (pendingCount(s) > 0) {
-    return 'Recoge cada canasta en el orden FIFO indicado. Si una canasta no tiene la mercancía, márcala como «No está aquí» y el sistema buscará automáticamente la siguiente ubicación más antigua.';
+    return 'Recoge cada canasta en el orden FIFO indicado. Si una canasta no tiene la mercancía, márcala como «No está aquí»: el sistema buscará la siguiente ubicación más antigua y, al confirmar, lo que no estaba pasa a PENDIENTES con su lote y fecha para que Administración lo resuelva.';
   }
   if (sf != null && sf.status == ShortfallStatus.unresolved) {
     return 'No hay suficiente existencia en Almacén Central. Trae unidades desde otra tienda o declara el faltante para poder confirmar.';

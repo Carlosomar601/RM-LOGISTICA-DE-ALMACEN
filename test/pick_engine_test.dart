@@ -112,7 +112,7 @@ void main() {
       expect(r.movements.map((m) => m.type), ['piqueo', 'piqueo', 'piqueo']);
     });
 
-    test('parcial: piqueo + discrepancia + no-encontrado', () {
+    test('parcial: piqueo + a-pendientes + no-encontrado', () {
       final s = createPickSession(inv, key: 'k', productId: 'p6', qty: 10, doc: 'OV-10501', nextId: nextId);
       markPicked(s, s.steps[0].id);
       markMissingHere(s, s.steps[1].id, inv, nextId);
@@ -122,10 +122,16 @@ void main() {
           nextMovementId: nextId);
       expect(r.delivered, 7);
       expect(r.shortQty, 3);
-      expect(r.movements.map((m) => m.type), ['piqueo', 'discrepancia', 'no-encontrado']);
+      expect(r.movements.map((m) => m.type), ['piqueo', 'a-pendientes', 'no-encontrado']);
       expect(r.movements[1].qty, 11);
-      expect(r.movements[1].to, 'Ajuste por ciclo de conteo');
+      expect(r.movements[1].to, 'PENDIENTES');
+      expect(r.movements[1].note, kPickMissingReason);
       expect(r.movements[2].qty, 3);
+      // Lo que no estaba sale con su lote y fecha para PENDIENTES.
+      expect(r.pendingOut.length, 1);
+      expect(r.pendingOut.single.bin, 'B-01-02');
+      expect(r.pendingOut.single.qty, 11);
+      expect(r.pendingOut.single.movementId, r.movements[1].id);
       // A-01-04 (7) piqueado por completo y B-01-02 ajustado a 0 → ambos desaparecen.
       expect(inv.where((x) => x.productId == 'p6' && x.store == kCentral), isEmpty);
     });

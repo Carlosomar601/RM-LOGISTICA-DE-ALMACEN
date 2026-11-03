@@ -89,6 +89,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             hint: 'bins con ≥ ${s.settings.ageAlertDays} días',
           ),
         ]),
+        if (s.openAudits.isNotEmpty || s.openPending.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          StatRow(maxColumns: 3, tiles: [
+            StatTile(
+              label: 'Auditorías abiertas',
+              value: '${s.openAudits.length}',
+              hint: '${s.lockedBins.length} canastas bloqueadas',
+              tone: s.lockedBins.isEmpty ? null : Tone.warn,
+            ),
+            StatTile(
+              label: 'Pendientes (unid.)',
+              value: fmtInt(s.pendingUnits),
+              hint: '${s.openPending.length} por resolver en Auditoría',
+              tone: s.pendingUnits > 0 ? Tone.warn : Tone.good,
+            ),
+          ]),
+        ],
         const SizedBox(height: 20),
         SectionCard(
           title: 'Productos',

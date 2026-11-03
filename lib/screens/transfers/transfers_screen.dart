@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/seed.dart';
+import '../../models/inv_row.dart';
 import '../../models/tone.dart';
 import '../../state/app_state.dart';
+import '../../state/pick_engine.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../util/format.dart';
@@ -21,7 +24,7 @@ class TransfersScreen extends ConsumerStatefulWidget {
 }
 
 class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this)
+  late final TabController _tabs = TabController(length: 3, vsync: this)
     ..addListener(() {
       if (mounted) setState(() {});
     });
@@ -58,6 +61,11 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
   }
   final _stQty = TextEditingController(text: '8');
 
+  // Canasta completa
+  String? _wholeSrc;
+  String? _wholeDst;
+  final _wholeObs = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +80,7 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
     _binQty.dispose();
     _obs.dispose();
     _stQty.dispose();
+    _wholeObs.dispose();
     super.dispose();
   }
 
@@ -155,15 +164,131 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
         TabBar(
           controller: _tabs,
           isScrollable: true,
-          tabs: const [Tab(text: 'Entre bins'), Tab(text: 'Entre tiendas')],
+          tabs: const [Tab(text: 'Entre bins'), Tab(text: 'Entre tiendas'), Tab(text: 'Canasta completa')],
         ),
         const SizedBox(height: 16),
         if (st.products.isEmpty)
           const NoteBox('Aún no hay productos. Llegan al importar recibos de RM en «Recibido sin ubicar».')
         else if (_tabs.index == 0)
           _binsTab(context)
+        else if (_tabs.index == 1)
+          _storesTab(context)
         else
-          _storesTab(context),
+          _wholeBinTab(context),
+      ],
+    );
+  }
+
+  Widget _wholeBinTab(BuildContext context) {
+    final s = ref.watch(appProvider);
+    final locked = s.lockedBins;
+    final codes = s.centralBinCodes;
+    final withStock = [
+      for (final b in codes)
+        if (s.inventory.any((r) => r.store == kCentral && r.bin == b && r.qty > 0)) b,
+    ];
+    final src = withStock.contains(_wholeSrc) ? _wholeSrc : (withStock.isEmpty ? null : withStock.first);
+    final dests = codes.where((b) => b != src).toList();
+    final dst = dests.contains(_wholeDst) ? _wholeDst : (dests.isEmpty ? null : dests.first);
+    final rows = src == null
+        ? const <InvRow>[]
+        : fifoSorted(s.inventory.where((r) => r.store == kCentral && r.bin == src && r.qty > 0));
+    final units = rows.fold(0, (a, r) => a + r.qty);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionCard(
+          title: 'Transferir una canasta completa',
+          subtitle: 'Mueve todo lo que hay en una canasta a otra. Cada fila conserva su lote, recibo y fecha de entrada '
+              '(el orden FIFO no cambia).',
+          child: Wrap(
+            spacing: 14,
+            runSpacing: 14,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            children: [
+              LabeledField(
+                label: 'Canasta origen',
+                width: 220,
+                child: AppDropdown<String>(
+                  value: src,
+                  mono: true,
+                  items: [
+                    for (final b in withStock)
+                      ddItem(context, b, locked.contains(b) ? '$b (en auditoría)' : b,
+                          mono: true, enabled: !locked.contains(b)),
+                  ],
+                  onChanged: (v) => setState(() => _wholeSrc = v),
+                ),
+              ),
+              LabeledField(
+                label: 'Canasta destino',
+                width: 220,
+                child: AppDropdown<String>(
+                  value: dst,
+                  mono: true,
+                  items: [
+                    for (final b in dests)
+                      ddItem(context, b, locked.contains(b) ? '$b (en auditoría)' : b,
+                          mono: true, enabled: !locked.contains(b)),
+                  ],
+                  onChanged: (v) => setState(() => _wholeDst = v),
+                ),
+              ),
+              LabeledField(
+                label: 'Observación',
+                width: 260,
+                child: AppTextField(controller: _wholeObs, hint: 'Opcional'),
+              ),
+              FilledButton(
+                onPressed: src == null || dst == null
+                    ? null
+                    : () {
+                        final err = ref
+                            .read(appProvider.notifier)
+                            .binTransferAll(from: src, to: dst, obs: _wholeObs.text);
+                        if (err != null) {
+                          showToast(ref, err);
+                          return;
+                        }
+                        showToast(ref, 'Canasta $src transferida completa a $dst ($units unidades)');
+                        setState(() {
+                          _wholeObs.clear();
+                          _wholeSrc = null;
+                        });
+                      },
+                child: const Text('Transferir canasta'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        SectionCard(
+          title: src == null ? 'Contenido' : 'Contenido de $src',
+          trailing: Pill('${rows.length} filas · $units unidades', mono: true),
+          flushBody: true,
+          child: AppTable(
+            emptyText: 'No hay canastas con inventario.',
+            columns: const [
+              TCol('Producto', width: 140, flex: 0.4),
+              TCol('Descripción', width: 180, flex: 1),
+              TCol('Lote', width: 90, flex: 0.2),
+              TCol('Recibo', width: 100, flex: 0.2),
+              TCol('Entrada', width: 110, flex: 0.2),
+              TCol('Cant.', width: 70, flex: 0, numeric: true),
+            ],
+            rows: [
+              for (final r in rows)
+                TRow([
+                  tMono(context, s.product(r.productId).code, weight: FontWeight.w600),
+                  tText(context, s.product(r.productId).desc, maxLines: 1),
+                  tMono(context, r.lot, muted: true),
+                  tMono(context, r.receipt, muted: true),
+                  tText(context, fmtDate(r.entryDate), maxLines: 1),
+                  tMono(context, '${r.qty}', weight: FontWeight.w700),
+                ]),
+            ],
+          ),
+        ),
       ],
     );
   }

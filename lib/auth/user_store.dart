@@ -18,7 +18,7 @@ enum UserStoreStatus {
 }
 
 /// PIN de demostración por usuario semilla (solo cuando no hay users.json).
-const kDemoPins = {'u1': '1111', 'u2': '2222', 'u3': '3333', 'u4': '4444'};
+const kDemoPins = {'u1': '1111', 'u2': '2222', 'u3': '3333', 'u4': '4444', 'u5': '5555'};
 
 /// Usuarios, PIN (hash), roles y seguridad, guardados en
 /// `%ProgramData%\RetailManager\PiqueoFIFO\users.json` (compartido por todas las cuentas del PC).
@@ -83,7 +83,11 @@ class UserStoreData {
       if (rp is Map) {
         for (final e in rp.entries) {
           if (e.value is List) {
-            presets['${e.key}'] = {for (final a in Area.values) a: (e.value as List).contains(a.name)};
+            presets['${e.key}'] = migratePerms(
+              {for (final a in Area.values) a: (e.value as List).contains(a.name)},
+              '${e.key}',
+              j['permsVersion'],
+            );
           }
         }
       }
@@ -113,6 +117,7 @@ class UserStoreData {
   }) =>
       const JsonEncoder.withIndent(' ').convert({
         'version': 1,
+        'permsVersion': kPermsVersion,
         'users': [for (final u in users) u.toJson()],
         'rolePresets': {
           for (final e in rolePresets.entries) e.key: [for (final a in Area.values) if (e.value[a] == true) a.name],

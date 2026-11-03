@@ -3,7 +3,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
-enum Area { dashboard, receiving, orders, picking, transfers, history, users }
+enum Area { dashboard, receiving, orders, picking, transfers, audit, auditManage, history, users }
 
 const kAreaLabels = <Area, String>{
   Area.dashboard: 'Dashboard',
@@ -11,6 +11,8 @@ const kAreaLabels = <Area, String>{
   Area.orders: 'Órdenes entrantes',
   Area.picking: 'Piqueo FIFO',
   Area.transfers: 'Transferencias',
+  Area.audit: 'Auditoría: contar',
+  Area.auditManage: 'Auditoría: crear, cerrar, pendientes y reporte',
   Area.history: 'Historial',
   Area.users: 'Administración',
 };
@@ -20,7 +22,13 @@ const kRoles = <String>[
   'Supervisor de almacén',
   'Piqueador',
   'Recibidor',
+  'Auditor',
 ];
+
+/// Áreas agregadas después de la primera versión de users.json: un archivo sin
+/// `permsVersion` las recibe del preset del rol (para que admin y supervisor no las pierdan).
+const kPermsVersion = 2;
+const kAreasSincePermsV2 = <Area>{Area.audit, Area.auditManage};
 
 Map<Area, bool> rolePreset(String role) {
   Set<Area> on;
@@ -33,6 +41,8 @@ Map<Area, bool> rolePreset(String role) {
       on = {Area.dashboard, Area.orders, Area.picking};
     case 'Recibidor':
       on = {Area.dashboard, Area.receiving};
+    case 'Auditor':
+      on = {Area.dashboard, Area.audit};
     default:
       on = {Area.dashboard};
   }
@@ -49,6 +59,13 @@ String newSalt([Random? rng]) {
 }
 
 bool isValidPin(String pin) => RegExp(r'^\d{4}$').hasMatch(pin);
+
+/// Completa las áreas nuevas desde el preset del rol cuando los permisos vienen de una versión anterior.
+Map<Area, bool> migratePerms(Map<Area, bool> perms, String role, Object? version) {
+  if (version is num && version >= kPermsVersion) return perms;
+  final preset = rolePreset(role);
+  return {...perms, for (final a in kAreasSincePermsV2) a: preset[a] ?? false};
+}
 
 class AppUser {
   AppUser({
@@ -114,6 +131,7 @@ class AppUser {
         'role': role,
         'active': active,
         'perms': [for (final a in Area.values) if (can(a)) a.name],
+        'permsVersion': kPermsVersion,
         if (hasPin) 'pinSalt': pinSalt,
         if (hasPin) 'pinHash': pinHash,
         if (orderCategories.isNotEmpty) 'orderCategories': orderCategories,
@@ -129,7 +147,9 @@ class AppUser {
       email: '${j['email'] ?? ''}',
       role: role,
       active: j['active'] != false,
-      perms: permList is List ? {for (final a in Area.values) a: permList.contains(a.name)} : rolePreset(role),
+      perms: permList is List
+          ? migratePerms({for (final a in Area.values) a: permList.contains(a.name)}, role, j['permsVersion'])
+          : rolePreset(role),
       pinSalt: j['pinSalt'] as String?,
       pinHash: j['pinHash'] as String?,
       orderCategories: [
