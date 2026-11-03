@@ -5,6 +5,7 @@ import '../../models/pick_session.dart';
 import '../../models/tone.dart';
 import '../../state/app_state.dart';
 import '../../state/pick_engine.dart';
+import '../../util/clock.dart';
 import '../../widgets/badge.dart';
 import '../../widgets/common.dart';
 import '../../widgets/pick_step_row.dart';
@@ -48,9 +49,14 @@ class PickingScreen extends ConsumerStatefulWidget {
 }
 
 class _PickingScreenState extends ConsumerState<PickingScreen> {
-  String _productId = 'p1';
-  final _qty = TextEditingController(text: '40');
-  final _doc = TextEditingController(text: 'OV-10482');
+  late String _productId = _firstProduct();
+  final _qty = TextEditingController(text: demoMode ? '40' : '');
+  final _doc = TextEditingController(text: demoMode ? 'OV-10482' : '');
+
+  String _firstProduct() {
+    final ps = ref.read(appProvider).products;
+    return ps.any((p) => p.id == 'p1') ? 'p1' : (ps.isEmpty ? '' : ps.first.id);
+  }
 
   @override
   void initState() {
@@ -99,6 +105,10 @@ class _PickingScreenState extends ConsumerState<PickingScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(appProvider);
     final s = state.pickSessions[kSingleSessionKey];
+    // Los productos llegan con los recibos de RM: si el elegido no existe, el primero.
+    if (state.products.isNotEmpty && state.products.every((p) => p.id != _productId)) {
+      _productId = state.products.first.id;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -118,7 +128,9 @@ class _PickingScreenState extends ConsumerState<PickingScreen> {
         const SizedBox(height: 20),
         SectionCard(
           title: 'Nueva ruta de piqueo',
-          child: Wrap(
+          child: state.products.isEmpty
+              ? const NoteBox('Aún no hay productos. Llegan al importar recibos de RM en «Recibido sin ubicar».')
+              : Wrap(
             spacing: 14,
             runSpacing: 14,
             crossAxisAlignment: WrapCrossAlignment.end,

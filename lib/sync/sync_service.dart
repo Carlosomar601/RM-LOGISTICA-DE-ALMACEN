@@ -75,6 +75,12 @@ class SyncService extends Notifier<SyncState> {
     if (!state.running && isDue(ref.read(clockProvider)())) await syncNow(auto: true);
   }
 
+  /// Vuelve a leer settings.json (después de restaurar un respaldo).
+  void reloadSettings() => state = SyncState(settings: SyncSettings.load(_file), parts: state.parts, lastRun: state.lastRun);
+
+  /// Archivo de configuración de sincronización de esta cuenta de Windows (null = sin archivo).
+  File? get settingsFile => _file;
+
   void _save() {
     state.settings.save(_file);
     state = state.copyWith();

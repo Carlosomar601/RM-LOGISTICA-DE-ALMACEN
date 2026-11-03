@@ -1,8 +1,12 @@
-# Piqueo FIFO Centeno
+# Retail Manager Logistics & Warehouse
 
 Demo funcional (Flutter) del módulo de **logística de almacén y piqueo FIFO** para Centeno Tire — Retail Manager.
-Sin backend ni persistencia: todo el estado vive en memoria y se reinicia al cerrar o recargar la app.
-La fecha "hoy" del demo es fija: **15 sept 2026 · 09:00** (`lib/util/clock.dart`).
+Los datos se guardan en el PC (`C:\ProgramData\RetailManager\PiqueoFIFO\data.json`) y se respaldan según una
+programación (ver *Datos y respaldos*).
+
+- **PC instalado** (hay `config.json`): fecha real y, en el primer arranque, un almacén vacío.
+- **Desarrollo** (`flutter run`, sin `config.json`) y **pruebas**: datos de demostración y fecha fija
+  **15 sept 2026 · 09:00** (`lib/util/clock.dart`, `demoMode`).
 
 ## Ejecutar
 
@@ -18,7 +22,7 @@ Si `flutter` no está en el PATH, usa la ruta completa: `& "D:\FLUTTER SDK\flutt
 Otras tareas:
 
 ```powershell
-flutter test                   # 118 pruebas: motor FIFO, estado, importación y sincronización con RM, overflow a 360/768/1440 px
+flutter test                   # 149 pruebas: motor FIFO, estado, RM, sesión, datos guardados, respaldos, overflow a 360/768/1440 px
 flutter analyze
 flutter test integration_test/rm_import_live_test.dart -d windows   # E2E contra la API real (localhost:8180, solo lectura)
 flutter build web              # salida en build\web
@@ -58,7 +62,8 @@ API anterior, la app informa "endpoint aún no disponible" sin fallar.
 - Una orden que cambia en RM se actualiza si aún no se piquea; si ya se empezó, queda marcada para revisar.
 - **Una orden que se convierte en factura no se despacha dos veces**: la factura se enlaza a su orden ("Facturada en RM")
   y solo entra lo que exceda lo ordenado ("Adicional a ORD-n"). Lo piqueado se anota en un libro de despachos
-  (`%APPDATA%\RetailManager\PiqueoFIFO\ledger.json`, 90 días) para que esto se cumpla también después de reiniciar la app.
+  (`C:\ProgramData\RetailManager\PiqueoFIFO\ledger.json`, 90 días, compartido por todas las cuentas del PC; antes
+  estaba en `%APPDATA%` y se copia solo la primera vez) para que esto se cumpla también después de reiniciar la app.
 - Si una factura llega antes que su orden (se facturó entre dos sincronizaciones), la orden entra marcada
   "Revisar antes de piquear".
 
@@ -83,6 +88,30 @@ lateral (en pantallas angostas, en el círculo con las iniciales), junto a *Camb
   `audit.log` (misma carpeta) y se ve en Administración → Usuarios → *Actividad de sesiones*.
 - Sin `users.json` (solo al desarrollar con `flutter run`) se usan los usuarios de demostración: administrador 1111,
   supervisora 2222, piqueador 3333. En un PC instalado eso nunca ocurre: el instalador crea el primer administrador.
+
+## Datos y respaldos
+
+- **Guardado automático**: inventario, recibos, órdenes, piqueos en curso, transferencias, historial, tiendas, canastas
+  y parámetros se escriben en `C:\ProgramData\RetailManager\PiqueoFIFO\data.json` 2 segundos después de cada cambio
+  (y al cerrar la ventana), con escritura atómica. Usuarios y PIN siguen en `users.json`.
+- **data.json dañado**: la app abre, avisa en la pantalla de PIN y en Administración → Respaldos, y **no guarda encima**.
+  Un administrador restaura un respaldo o elige *Empezar vacío* (el archivo dañado se aparta como `data.danado-….json`).
+- **Administración → Respaldos**:
+  - frecuencia (solo manual, todos los días, dos veces por semana, una vez por semana, una vez al mes);
+  - días de la semana o día del mes (1–28), hora;
+  - carpeta (por defecto `…\PiqueoFIFO\backups`; puede ser un USB o `\\servidor\carpeta`, con *Probar carpeta*);
+  - *Conservar los últimos N* (30 por defecto) y *Respaldar ahora*.
+- **Cuándo corre**: con la app abierta (arranca con Windows). Si a la hora programada estaba cerrada, respalda al abrirla.
+  Si la carpeta no está disponible, reintenta cada 30 min.
+- **Qué guarda**: `RMLogistics-respaldo-AAAA-MM-DD_HHMM.zip` con `manifest.json`, `data.json`, `users.json` (PIN
+  cifrado), `audit.log`, `ledger.json`, `settings.json` y `config.json`. Solo se borran los zip con ese nombre.
+- **Restaurar** (lista de respaldos → *Restaurar*):
+  - se valida el zip y se pide el PIN del administrador;
+  - antes se hace un respaldo `…-antes-de-restaurar.zip`;
+  - reemplaza datos, usuarios, libro de despachos y sincronización, y cierra la sesión;
+  - no toca la dirección API del PC (`config.json`) ni `audit.log`;
+  - un respaldo sin ningún administrador activo con PIN se rechaza.
+- Cada respaldo, fallo y restauración queda en `audit.log`.
 
 ## Logo
 

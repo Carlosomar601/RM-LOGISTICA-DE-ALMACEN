@@ -1,3 +1,5 @@
+import 'json_util.dart';
+
 class StoreTransfer {
   StoreTransfer({
     required this.id,
@@ -20,6 +22,28 @@ class StoreTransfer {
   /// pendiente | recibido
   String status;
   DateTime? receivedAt;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'productId': productId,
+        'qty': qty,
+        'fromStore': fromStore,
+        'toStore': toStore,
+        'sentAt': sentAt.toIso8601String(),
+        'status': status,
+        if (receivedAt != null) 'receivedAt': receivedAt!.toIso8601String(),
+      };
+
+  factory StoreTransfer.fromJson(Map j) => StoreTransfer(
+        id: jStr(j, 'id'),
+        productId: jStr(j, 'productId'),
+        qty: jInt(j, 'qty'),
+        fromStore: jStr(j, 'fromStore'),
+        toStore: jStr(j, 'toStore'),
+        sentAt: jDate(j, 'sentAt'),
+        status: jStr(j, 'status'),
+        receivedAt: jDateOrNull(j, 'receivedAt'),
+      );
 }
 
 class BinTransfer {
@@ -42,4 +66,26 @@ class BinTransfer {
   final String user;
   final DateTime dateTime;
   final String obs;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'productId': productId,
+        'qty': qty,
+        'from': from,
+        'to': to,
+        'user': user,
+        'dateTime': dateTime.toIso8601String(),
+        'obs': obs,
+      };
+
+  factory BinTransfer.fromJson(Map j) => BinTransfer(
+        id: jStr(j, 'id'),
+        productId: jStr(j, 'productId'),
+        qty: jInt(j, 'qty'),
+        from: jStr(j, 'from'),
+        to: jStr(j, 'to'),
+        user: jStr(j, 'user'),
+        dateTime: jDate(j, 'dateTime'),
+        obs: jStr(j, 'obs'),
+      );
 }

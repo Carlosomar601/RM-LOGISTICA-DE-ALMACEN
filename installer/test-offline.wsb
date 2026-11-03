@@ -9,6 +9,6 @@
     </MappedFolder>
   </MappedFolders>
   <LogonCommand>
-    <Command>cmd /c start "" C:\Instalador\PiqueoFIFO-Setup-1.0.0.exe</Command>
+    <Command>cmd /c start "" C:\Instalador\RMLogistics-Setup-1.0.0.exe</Command>
   </LogonCommand>
 </Configuration>

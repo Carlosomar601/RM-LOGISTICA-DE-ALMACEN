@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:collection/collection.dart';
@@ -7,10 +8,12 @@ import '../api/rm_api.dart';
 import '../auth/audit_log.dart';
 import '../auth/user_store.dart';
 import '../config/app_config.dart';
+import '../data/data_store.dart';
 import '../data/seed.dart';
 import '../models/admin_config.dart';
 import '../models/app_user.dart';
 import '../models/inv_row.dart';
+import '../models/json_util.dart';
 import '../models/movement.dart';
 import '../models/order.dart';
 import '../models/pick_session.dart';
@@ -67,6 +70,9 @@ class StoreTransferPrefill {
 
 const kSingleSessionKey = '__single__';
 
+/// Versión del formato de data.json.
+const kDataVersion = 1;
+
 String orderSessionKey(String orderId, String productId) => '$orderId$productId';
 
 class AppState {
@@ -89,6 +95,8 @@ class AppState {
     this.simulatedUserId,
     this.currentUserId,
     this.userStoreError,
+    this.dataStoreError,
+    this.lastConfigApiUrl,
     this.logoutReason,
     this.transferPrefill,
     this.orderSeq = 10504,
@@ -123,6 +131,106 @@ class AppState {
         importedLineIds: {},
       );
 
+  /// PC instalado sin data.json: solo el almacén central con sus canastas de recepción.
+  /// Tiendas, canastas, productos y existencias se crean en la app o llegan de RM.
+  factory AppState.empty() {
+    final central = seedStores().firstWhere((s) => s.isCentral);
+    return AppState(
+      products: [],
+      inventory: [],
+      orders: [],
+      receipts: [],
+      history: [],
+      storeTransfers: [],
+      binTransfers: [],
+      users: [],
+      pickSessions: {},
+      stores: [central],
+      bins: [
+        for (final b in seedBins())
+          if (b.storeId == central.id && b.special) b,
+      ],
+      settings: AppSettings(),
+      rolePresets: {for (final r in kRoles) r: rolePreset(r)},
+      importedLineIds: {},
+      productSeq: 1,
+      invSeq: 1,
+    );
+  }
+
+  /// Contenido de data.json (sin usuarios ni datos de sesión/pantalla).
+  Map<String, dynamic> toDataJson() => {
+        'version': kDataVersion,
+        'products': [for (final x in products) x.toJson()],
+        'inventory': [for (final x in inventory) x.toJson()],
+        'orders': [for (final x in orders) x.toJson()],
+        'receipts': [for (final x in receipts) x.toJson()],
+        'history': [for (final x in history) x.toJson()],
+        'storeTransfers': [for (final x in storeTransfers) x.toJson()],
+        'binTransfers': [for (final x in binTransfers) x.toJson()],
+        'pickSessions': [for (final x in pickSessions.values) x.toJson()],
+        'stores': [for (final x in stores) x.toJson()],
+        'bins': [for (final x in bins) x.toJson()],
+        'settings': settings.toJson(),
+        'importedLineIds': (importedLineIds.toList()..sort()),
+        if (lastConfigApiUrl != null) 'lastConfigApiUrl': lastConfigApiUrl,
+        'seq': {
+          'order': orderSeq,
+          'receipt': receiptSeq,
+          'lot': lotSeq,
+          'tb': tbSeq,
+          'ts': tsSeq,
+          'movement': movementSeq,
+          'inv': invSeq,
+          'step': stepSeq,
+          'store': storeSeq,
+          'bin': binSeq,
+          'product': productSeq,
+        },
+      };
+
+  /// Lee data.json. Lanza [FormatException] si falta algo: el archivo se trata como dañado.
+  factory AppState.fromDataJson(Map j) {
+    final v = j['version'];
+    if (v is! num || v.toInt() > kDataVersion) {
+      throw FormatException('versión de datos no soportada: $v');
+    }
+    final seq = j['seq'] is Map ? j['seq'] as Map : throw const FormatException('falta "seq"');
+    final settings = j['settings'] is Map ? j['settings'] as Map : throw const FormatException('falta "settings"');
+    final stores = [for (final x in jList(j, 'stores')) Store.fromJson(x)];
+    if (!stores.any((s) => s.isCentral)) throw const FormatException('no hay almacén central');
+    return AppState(
+      products: [for (final x in jList(j, 'products')) Product.fromJson(x)],
+      inventory: [for (final x in jList(j, 'inventory')) InvRow.fromJson(x)],
+      orders: [for (final x in jList(j, 'orders')) Order.fromJson(x)],
+      receipts: [for (final x in jList(j, 'receipts')) Receipt.fromJson(x)],
+      history: [for (final x in jList(j, 'history')) Movement.fromJson(x)],
+      storeTransfers: [for (final x in jList(j, 'storeTransfers')) StoreTransfer.fromJson(x)],
+      binTransfers: [for (final x in jList(j, 'binTransfers')) BinTransfer.fromJson(x)],
+      users: [],
+      pickSessions: {
+        for (final p in [for (final x in jList(j, 'pickSessions')) PickSession.fromJson(x)]) p.key: p,
+      },
+      stores: stores,
+      bins: [for (final x in jList(j, 'bins')) Bin.fromJson(x)],
+      settings: AppSettings.fromJson(settings),
+      rolePresets: {for (final r in kRoles) r: rolePreset(r)},
+      importedLineIds: jStrings(j, 'importedLineIds').toSet(),
+      lastConfigApiUrl: jStrOrNull(j, 'lastConfigApiUrl'),
+      orderSeq: jInt(seq, 'order'),
+      receiptSeq: jInt(seq, 'receipt'),
+      lotSeq: jInt(seq, 'lot'),
+      tbSeq: jInt(seq, 'tb'),
+      tsSeq: jInt(seq, 'ts'),
+      movementSeq: jInt(seq, 'movement'),
+      invSeq: jInt(seq, 'inv'),
+      stepSeq: jInt(seq, 'step'),
+      storeSeq: jInt(seq, 'store'),
+      binSeq: jInt(seq, 'bin'),
+      productSeq: jInt(seq, 'product'),
+    );
+  }
+
   final List<Product> products;
   final List<InvRow> inventory;
   final List<Order> orders;
@@ -146,6 +254,13 @@ class AppState {
 
   /// users.json dañado: no se puede iniciar sesión.
   String? userStoreError;
+
+  /// data.json dañado: la app no guarda (para no sobrescribirlo) hasta restaurar o empezar vacío.
+  String? dataStoreError;
+
+  /// Última dirección API de config.json aplicada al almacén central: si el instalador la
+  /// cambia se aplica al abrir; si no, manda la que se editó en Administración → Tiendas.
+  String? lastConfigApiUrl;
 
   /// Motivo del último cierre automático, para mostrarlo en la pantalla de PIN.
   String? logoutReason;
@@ -172,6 +287,8 @@ class AppState {
         simulatedUserId: simulatedUserId,
         currentUserId: currentUserId,
         userStoreError: userStoreError,
+        dataStoreError: dataStoreError,
+        lastConfigApiUrl: lastConfigApiUrl,
         logoutReason: logoutReason,
         transferPrefill: transferPrefill,
         orderSeq: orderSeq,
@@ -372,8 +489,36 @@ class AppNotifier extends Notifier<AppState> {
 
   @override
   AppState build() {
-    final s = AppState.seed();
-    final store = ref.read(userStoreProvider);
+    ref.onDispose(() => _saveTimer?.cancel());
+    final installed = ref.read(appConfigProvider).source != null;
+    final load = ref.read(dataLoadProvider);
+    AppState s;
+    String? dataError;
+    switch (load.status) {
+      case DataStoreStatus.ok:
+        try {
+          s = AppState.fromDataJson(load.json!);
+        } catch (e) {
+          s = AppState.empty();
+          dataError = 'No se pudieron leer los datos del almacén (${ref.read(dataFileProvider)?.path ?? 'data.json'}): $e';
+        }
+      case DataStoreStatus.broken:
+        s = AppState.empty();
+        dataError = load.error;
+      case DataStoreStatus.missing:
+        s = installed ? AppState.empty() : AppState.seed();
+    }
+    s.dataStoreError = dataError;
+    _applyUsers(s, ref.read(userStoreProvider));
+    final url = ref.read(appConfigProvider).apiUrl;
+    if (url.isNotEmpty && url != s.lastConfigApiUrl) {
+      s.centralStore.apiUrl = url;
+      s.lastConfigApiUrl = url;
+    }
+    return s;
+  }
+
+  void _applyUsers(AppState s, UserStoreData store) {
     s.users
       ..clear()
       ..addAll(store.users);
@@ -384,12 +529,91 @@ class AppNotifier extends Notifier<AppState> {
     s.userStoreError = store.status == UserStoreStatus.broken ? store.error : null;
     final maxId = s.users.map((u) => int.tryParse(u.id.replaceFirst('u', '')) ?? 0).fold(0, max);
     s.userSeq = store.status == UserStoreStatus.ok ? maxId + 1 : max(s.userSeq, maxId + 1);
-    final url = ref.read(appConfigProvider).apiUrl;
-    if (url.isNotEmpty) s.centralStore.apiUrl = url;
-    return s;
   }
 
-  void _emit() => state = state.clone();
+  void _emit() {
+    state = state.clone();
+    _scheduleSave();
+  }
+
+  // ---------- Guardado de data.json ----------
+
+  Timer? _saveTimer;
+
+  /// Espera tras el último cambio antes de escribir (agrupa ráfagas de cambios).
+  static const saveDelay = Duration(seconds: 2);
+
+  /// Último error al guardar (sin permiso, disco lleno…); null = guardado al día.
+  String? lastSaveError;
+
+  bool get _canSave => ref.read(dataFileProvider) != null && state.dataStoreError == null;
+
+  void _scheduleSave() {
+    if (!_canSave) return;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(saveDelay, flush);
+  }
+
+  /// Guarda ya lo pendiente (antes de un respaldo, al cerrar sesión o la ventana).
+  void flush() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    final file = ref.read(dataFileProvider);
+    if (file == null || state.dataStoreError != null) return;
+    try {
+      DataStore.write(file, state.toDataJson());
+      lastSaveError = null;
+    } catch (e) {
+      lastSaveError = 'No se pudieron guardar los datos: $e';
+    }
+  }
+
+  /// data.json dañado → lo aparta (`data.danado-….json`) y sigue con un almacén vacío.
+  void startFresh() {
+    final file = ref.read(dataFileProvider);
+    if (file != null) {
+      try {
+        DataStore.setAsideBroken(file, ref.read(clockProvider)());
+      } catch (_) {}
+    }
+    final fresh = AppState.empty()
+      ..users.addAll(state.users)
+      ..currentUserId = state.currentUserId
+      ..currentView = state.currentView
+      ..settings.autoLogoutMinutes = state.settings.autoLogoutMinutes
+      ..userSeq = state.userSeq
+      ..lastConfigApiUrl = state.lastConfigApiUrl;
+    fresh.rolePresets
+      ..clear()
+      ..addAll(state.rolePresets);
+    final url = ref.read(appConfigProvider).apiUrl;
+    if (url.isNotEmpty) fresh.centralStore.apiUrl = url;
+    _audit('datos dañados apartados; se empezó vacío', state.currentUser?.name ?? '—');
+    state = fresh;
+    flush();
+  }
+
+  /// Reemplaza todo con un respaldo ya validado y cierra la sesión (los usuarios pudieron cambiar).
+  void restoreFrom(AppState data, UserStoreData users) {
+    final by = state.currentUser?.name ?? '—';
+    data
+      ..dataStoreError = null
+      ..currentView = AppView.dashboard
+      ..logoutReason = 'Respaldo restaurado. Entra con tu PIN.';
+    _applyUsers(data, users);
+    final url = ref.read(appConfigProvider).apiUrl;
+    if (url.isNotEmpty) {
+      // La dirección API de este PC (config.json) no viaja con el respaldo.
+      data.centralStore.apiUrl = url;
+      data.lastConfigApiUrl = url;
+    }
+    _failedPins = 0;
+    _lockedUntil = null;
+    _audit('respaldo restaurado', by);
+    state = data;
+    flush();
+    _saveUsers();
+  }
 
   String _mvId() => 'MV-${state.movementSeq++}';
   String _stepId() => 'st-${state.stepSeq++}';

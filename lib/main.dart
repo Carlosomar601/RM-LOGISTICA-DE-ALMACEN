@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,10 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
 import 'auth/audit_log.dart';
+import 'backup/backup_service.dart';
+import 'data/data_store.dart';
+import 'state/app_state.dart';
+import 'util/clock.dart';
 import 'auth/session.dart';
 import 'auth/user_store.dart';
 import 'config/app_config.dart';
@@ -34,23 +39,44 @@ Future<void> main(List<String> args) async {
   } catch (_) {
     await initializeDateFormatting('es');
   }
+  // PC instalado (hay config.json): fecha real y, sin data.json, un almacén vacío.
+  // Desarrollo (`flutter run`): fecha fija y datos de demostración.
+  final installed = config.source != null;
+  demoMode = !installed;
   final dataDir = kIsWeb ? null : defaultUserDataDir();
-  // Usuarios y PIN: compartidos por todas las cuentas de Windows del PC (ProgramData).
+  // Datos, usuarios y PIN, libro de despachos y respaldos: compartidos por todas las cuentas
+  // de Windows del PC (ProgramData).
+  final sharedDir = kIsWeb ? null : defaultSharedDir();
   final usersFile = kIsWeb ? null : defaultUserStoreFile();
+  final dataFile = sharedDir == null ? null : File('${sharedDir.path}\\data.json');
   final container = ProviderContainer(overrides: [
     appConfigProvider.overrideWithValue(config),
     userDataDirProvider.overrideWithValue(dataDir),
-    ledgerProvider.overrideWithValue(
-        DispatchLedger.load(dataDir == null ? null : File('${dataDir.path}\\ledger.json'))),
+    sharedDirProvider.overrideWithValue(sharedDir),
+    dataLoadProvider.overrideWithValue(DataStore.load(dataFile)),
+    ledgerProvider.overrideWithValue(DispatchLedger.load(DispatchLedger.sharedFile(sharedDir, dataDir))),
     userStoreFileProvider.overrideWithValue(usersFile),
-    userStoreProvider.overrideWithValue(UserStoreData.load(usersFile, installed: config.source != null)),
+    userStoreProvider.overrideWithValue(UserStoreData.load(usersFile, installed: installed)),
     auditProvider.overrideWithValue(
         AuditLog.load(usersFile == null ? null : File('${usersFile.parent.path}\\audit.log'))),
   ]);
+  // Guarda lo pendiente al cerrar la ventana o al ocultarse la app.
+  _lifecycle = AppLifecycleListener(
+    onExitRequested: () async {
+      container.read(appProvider.notifier).flush();
+      return AppExitResponse.exit;
+    },
+    onHide: () => container.read(appProvider.notifier).flush(),
+    onDetach: () => container.read(appProvider.notifier).flush(),
+  );
   runApp(UncontrolledProviderScope(container: container, child: const PiqueoApp()));
-  // Sincronización con RM según Administración → Parámetros (solo mientras la app está abierta).
+  // Sincronización con RM y respaldos según Administración (solo mientras la app está abierta).
   container.read(syncProvider.notifier).start();
+  container.read(backupProvider.notifier).start();
 }
+
+// ignore: unused_element
+AppLifecycleListener? _lifecycle;
 
 class PiqueoApp extends ConsumerWidget {
   const PiqueoApp({super.key});
@@ -59,7 +85,7 @@ class PiqueoApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider);
     return MaterialApp(
-      title: 'Piqueo FIFO Centeno',
+      title: 'Retail Manager Logistics & Warehouse',
       debugShowCheckedModeBanner: false,
       themeMode: mode,
       theme: buildTheme(Brightness.light),

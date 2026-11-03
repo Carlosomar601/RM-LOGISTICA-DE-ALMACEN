@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "Retail Manager" "\0"
-            VALUE "FileDescription", "Piqueo FIFO Centeno" "\0"
+            VALUE "FileDescription", "Retail Manager Logistics & Warehouse" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "piqueo_fifo_centeno" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 Retail Manager. All rights reserved." "\0"
             VALUE "OriginalFilename", "piqueo_fifo_centeno.exe" "\0"
-            VALUE "ProductName", "Piqueo FIFO Centeno" "\0"
+            VALUE "ProductName", "Retail Manager Logistics & Warehouse" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

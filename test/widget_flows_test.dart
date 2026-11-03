@@ -60,7 +60,7 @@ void main() {
         await go(t, AppView.users);
         await tapText(t, 'Juan Nieves');
         expect(t.takeException(), isNull);
-        for (final tab in ['Tiendas', 'Canastas', 'Roles', 'Parámetros']) {
+        for (final tab in ['Tiendas', 'Canastas', 'Roles', 'Parámetros', 'Respaldos']) {
           await tapText(t, tab);
           expect(t.takeException(), isNull, reason: 'tab $tab');
         }

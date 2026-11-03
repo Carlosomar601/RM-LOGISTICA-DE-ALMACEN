@@ -1,3 +1,5 @@
+import 'json_util.dart';
+
 class OrderItem {
   OrderItem({required this.productId, required this.qty, this.delivered = 0});
 
@@ -10,6 +12,11 @@ class OrderItem {
   int delivered;
 
   int get remaining => (qty - delivered).clamp(0, qty);
+
+  Map<String, dynamic> toJson() => {'productId': productId, 'qty': qty, 'delivered': delivered};
+
+  factory OrderItem.fromJson(Map j) =>
+      OrderItem(productId: jStr(j, 'productId'), qty: jInt(j, 'qty'), delivered: jInt(j, 'delivered'));
 }
 
 /// Origen de la orden.
@@ -36,6 +43,7 @@ class Order {
 
   final String id;
   final String customer;
+
   final String store;
   final DateTime date;
 
@@ -58,4 +66,32 @@ class Order {
 
   bool get isOpen => status != 'completada';
   bool get isRm => source != OrderSource.demo;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'customer': customer,
+        'store': store,
+        'date': date.toIso8601String(),
+        'status': status,
+        'items': [for (final i in items) i.toJson()],
+        'source': source,
+        if (rmStore != null) 'rmStore': rmStore,
+        if (rmNumber != null) 'rmNumber': rmNumber,
+        if (syncNote != null) 'syncNote': syncNote,
+        'invoices': invoices,
+      };
+
+  factory Order.fromJson(Map j) => Order(
+        id: jStr(j, 'id'),
+        customer: jStr(j, 'customer'),
+        store: jStr(j, 'store'),
+        date: jDate(j, 'date'),
+        status: jStr(j, 'status'),
+        items: [for (final i in jList(j, 'items')) OrderItem.fromJson(i)],
+        source: jStrOrNull(j, 'source') ?? OrderSource.demo,
+        rmStore: jStrOrNull(j, 'rmStore'),
+        rmNumber: jStrOrNull(j, 'rmNumber'),
+        syncNote: jStrOrNull(j, 'syncNote'),
+        invoices: jStrings(j, 'invoices'),
+      );
 }

@@ -133,7 +133,15 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
       final pre = next.transferPrefill;
       if (pre != null) setState(() => _applyPrefill(pre));
     });
-    ref.watch(appProvider);
+    final st = ref.watch(appProvider);
+    // Los productos llegan con los recibos de RM: si el elegido no existe, el primero.
+    if (st.products.isNotEmpty) {
+      if (st.products.every((p) => p.id != _binProduct)) {
+        _binProduct = st.products.first.id;
+        _srcRowId = _defaultSrc(_binProduct);
+      }
+      if (st.products.every((p) => p.id != _stProduct)) _stProduct = st.products.first.id;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -150,7 +158,12 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> with SingleTi
           tabs: const [Tab(text: 'Entre bins'), Tab(text: 'Entre tiendas')],
         ),
         const SizedBox(height: 16),
-        if (_tabs.index == 0) _binsTab(context) else _storesTab(context),
+        if (st.products.isEmpty)
+          const NoteBox('Aún no hay productos. Llegan al importar recibos de RM en «Recibido sin ubicar».')
+        else if (_tabs.index == 0)
+          _binsTab(context)
+        else
+          _storesTab(context),
       ],
     );
   }

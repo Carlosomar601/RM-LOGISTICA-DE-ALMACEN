@@ -13,6 +13,25 @@ String fmtDate(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
 String fmtDateTime(DateTime d) =>
     '${d.day} ${_months[d.month - 1]} · ${_two(d.hour)}:${_two(d.minute)}';
 
+/// "11:00 p. m." (reloj de 12 horas, como se usa en Puerto Rico).
+String fmtTime(int hour, int minute) {
+  final h12 = hour % 12 == 0 ? 12 : hour % 12;
+  return '$h12:${_two(minute)} ${hour < 12 ? 'a. m.' : 'p. m.'}';
+}
+
+const _weekdays = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
+/// "jueves 15 oct, 11:00 p. m."
+String fmtWeekdayDateTime(DateTime d) =>
+    '${_weekdays[d.weekday - 1]} ${d.day} ${_months[d.month - 1]}, ${fmtTime(d.hour, d.minute)}';
+
+/// "1.2 MB" / "340 KB"
+String fmtBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).round()} KB';
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+}
+
 /// Número con separador de miles.
 String fmtInt(int n) {
   final neg = n < 0;

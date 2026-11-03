@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../widgets/common.dart';
 import '../users/users_screen.dart';
+import 'backups_tab.dart';
 import 'bins_tab.dart';
 import 'roles_tab.dart';
 import 'settings_tab.dart';
@@ -17,7 +18,7 @@ class AdminScreen extends ConsumerStatefulWidget {
 }
 
 class _AdminScreenState extends ConsumerState<AdminScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 5, vsync: this)
+  late final TabController _tabs = TabController(length: 6, vsync: this)
     ..addListener(() {
       if (mounted) setState(() {});
     });
@@ -36,7 +37,8 @@ class _AdminScreenState extends ConsumerState<AdminScreen> with SingleTickerProv
         const ScreenHeader(
           eyebrow: 'Administración',
           title: 'Configuración del sistema',
-          subtitle: 'Usuarios, tiendas, canastas del almacén, roles y parámetros. Todo lo que se parametriza se administra aquí.',
+          subtitle: 'Usuarios, tiendas, canastas del almacén, roles, parámetros y respaldos. '
+              'Todo lo que se parametriza se administra aquí.',
         ),
         TabBar(
           controller: _tabs,
@@ -48,6 +50,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> with SingleTickerProv
             Tab(text: 'Canastas'),
             Tab(text: 'Roles'),
             Tab(text: 'Parámetros'),
+            Tab(text: 'Respaldos'),
           ],
         ),
         const SizedBox(height: 16),
@@ -56,7 +59,8 @@ class _AdminScreenState extends ConsumerState<AdminScreen> with SingleTickerProv
           1 => const StoresTab(),
           2 => const BinsTab(),
           3 => const RolesTab(),
-          _ => const SettingsTab(),
+          4 => const SettingsTab(),
+          _ => const BackupsTab(),
         },
       ],
     );

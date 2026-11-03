@@ -38,7 +38,8 @@ class SyncSettings {
 
   SyncInterval interval;
 
-  /// Días que se recuperan al iniciar la app (el estado se reinicia en cada arranque).
+  /// Días que se recuperan en la primera sincronización de cada arranque (la importación es
+  /// idempotente: lo ya guardado en data.json no se duplica).
   int lookbackDays;
   DateTime? lastSync;
 

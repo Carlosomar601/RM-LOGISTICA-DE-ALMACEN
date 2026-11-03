@@ -1,4 +1,4 @@
-﻿# Genera installer\Output\PiqueoFIFO-Setup-<version>.exe (instalador fuera de línea).
+﻿# Genera installer\Output\RMLogistics-Setup-<version>.exe (instalador fuera de línea).
 #   powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1 [-SkipBuild]
 # Internet solo se usa aquí, la primera vez, para descargar el runtime de Visual C++.
 param([switch]$SkipBuild)
@@ -50,4 +50,4 @@ if (-not $iscc) { throw 'No se encontró Inno Setup 6 (ISCC.exe). Instálalo: wi
 
 & $iscc "/DAppVersion=$version" "$PSScriptRoot\piqueo_fifo.iss"
 if ($LASTEXITCODE -ne 0) { throw "ISCC falló ($LASTEXITCODE)" }
-Write-Host "Listo: $PSScriptRoot\Output\PiqueoFIFO-Setup-$version.exe"
+Write-Host "Listo: $PSScriptRoot\Output\RMLogistics-Setup-$version.exe"

@@ -75,23 +75,43 @@ class DispatchLedger {
   int get length => _entries.length;
 
   /// Lee el archivo; si falta o está dañado empieza vacío.
-  static DispatchLedger load(File? file, {DateTime? now}) {
-    final l = DispatchLedger(file: file);
-    if (file == null) return l;
+  static DispatchLedger load(File? file, {DateTime? now}) => DispatchLedger(file: file)..reload(now: now);
+
+  /// Vuelve a leer el archivo (p. ej. después de restaurar un respaldo).
+  void reload({DateTime? now}) {
+    _entries.clear();
+    final f = file;
+    if (f == null) return;
     try {
-      if (file.existsSync()) {
-        final j = jsonDecode(file.readAsStringSync());
+      if (f.existsSync()) {
+        final j = jsonDecode(f.readAsStringSync());
         if (j is Map) {
           for (final e in j.entries) {
-            if (e.value is Map) l._entries['${e.key}'] = LedgerEntry.fromJson(Map<String, dynamic>.from(e.value as Map));
+            if (e.value is Map) _entries['${e.key}'] = LedgerEntry.fromJson(Map<String, dynamic>.from(e.value as Map));
           }
         }
       }
     } catch (_) {
-      l._entries.clear();
+      _entries.clear();
     }
-    l.prune(now ?? DateTime.now());
-    return l;
+    prune(now ?? DateTime.now());
+  }
+
+  /// Archivo del libro en la carpeta compartida. Antes vivía en `%APPDATA%` (por cuenta de Windows):
+  /// si aún no existe el compartido, se copia el anterior una sola vez.
+  static File? sharedFile(Directory? sharedDir, Directory? oldUserDir) {
+    if (sharedDir == null) return null;
+    final f = File('${sharedDir.path}${Platform.pathSeparator}ledger.json');
+    if (!f.existsSync() && oldUserDir != null) {
+      final old = File('${oldUserDir.path}${Platform.pathSeparator}ledger.json');
+      try {
+        if (old.existsSync()) {
+          sharedDir.createSync(recursive: true);
+          old.copySync(f.path);
+        }
+      } catch (_) {}
+    }
+    return f;
   }
 
   void prune(DateTime now) => _entries.removeWhere((_, e) => now.difference(e.created) > retention);

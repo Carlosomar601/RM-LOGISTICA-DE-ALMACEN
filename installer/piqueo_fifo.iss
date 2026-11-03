@@ -1,12 +1,14 @@
-﻿; Instalador fuera de línea de Piqueo FIFO Centeno (Inno Setup 6).
+﻿; Instalador fuera de línea de Retail Manager Logistics & Warehouse (Inno Setup 6).
 ; Compilar con installer\build_installer.ps1 (pasa /DAppVersion=... desde pubspec.yaml).
 ;
 ; Instalación silenciosa:
-;   PiqueoFIFO-Setup-x.y.z.exe /VERYSILENT /API=http://servidor:8180 /LOG=C:\ruta\setup.log
+;   RMLogistics-Setup-x.y.z.exe /VERYSILENT /API=http://servidor:8180 /LOG=C:\ruta\setup.log
 ; Primera instalación en un PC (aún no hay users.json): además /ADMINNAME="Nombre" /ADMINPIN=1234.
 ; Código de salida 100 = instalado, pero el autodiagnóstico falló (ver selftest.log).
 
-#define AppName "Piqueo FIFO Centeno"
+#define AppName "Retail Manager Logistics & Warehouse"
+; Igual, para textos de casillas (en Inno "&" marca la tecla de acceso; "&&" es un "&").
+#define AppNameUI "Retail Manager Logistics && Warehouse"
 #define AppPublisher "Retail Manager"
 #define AppExe "piqueo_fifo_centeno.exe"
 #define BuildDir "..\build\windows\x64\runner\Release"
@@ -21,11 +23,11 @@ AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
 VersionInfoVersion={#AppVersion}
-DefaultDirName={autopf}\Retail Manager\Piqueo FIFO
+DefaultDirName={autopf}\Retail Manager\Logistics & Warehouse
 DefaultGroupName=Retail Manager
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=PiqueoFIFO-Setup-{#AppVersion}
+OutputBaseFilename=RMLogistics-Setup-{#AppVersion}
 SetupIconFile=..\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
@@ -45,7 +47,7 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; GroupDescription: "Accesos directos:"
-Name: "startup"; Description: "Abrir {#AppName} al iniciar sesión en Windows"; GroupDescription: "Inicio automático:"
+Name: "startup"; Description: "Abrir {#AppNameUI} al iniciar sesión en Windows"; GroupDescription: "Inicio automático:"
 
 [Dirs]
 ; Carpeta compartida (configuración, usuarios y PIN, auditoría): los empleados con cuentas
@@ -57,6 +59,12 @@ Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 ; Runtime de Visual C++ empaquetado: se extrae y ejecuta desde el código solo si falta.
 Source: "redist\VC_redist.x64.exe"; Flags: dontcopy
 
+[InstallDelete]
+; Accesos con el nombre anterior de la app (Piqueo FIFO Centeno).
+Type: files; Name: "{autoprograms}\Piqueo FIFO Centeno.lnk"
+Type: files; Name: "{autodesktop}\Piqueo FIFO Centeno.lnk"
+Type: files; Name: "{commonstartup}\Piqueo FIFO Centeno.lnk"
+
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
@@ -64,13 +72,14 @@ Name: "{commonstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startup
 
 [Run]
 ; Se abre también en instalaciones silenciosas, para dejar la app corriendo.
-Filename: "{app}\{#AppExe}"; Description: "Abrir {#AppName}"; Flags: nowait postinstall runasoriginaluser
+Filename: "{app}\{#AppExe}"; Description: "Abrir {#AppNameUI}"; Flags: nowait postinstall runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe}"; Flags: runhidden; RunOnceId: "CerrarApp"
 
 [UninstallDelete]
-; Se conservan config.json, users.json (usuarios y PIN) y audit.log para una reinstalación.
+; Se conservan config.json, users.json (usuarios y PIN), audit.log, data.json (datos del almacén),
+; ledger.json, backup.json y la carpeta backups\ para una reinstalación.
 Type: files; Name: "{commonappdata}\RetailManager\PiqueoFIFO\selftest.log"
 
 [Code]

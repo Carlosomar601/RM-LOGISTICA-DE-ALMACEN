@@ -1,5 +1,5 @@
 name: piqueo_fifo_centeno
-description: "Piqueo FIFO Centeno — demo de logística de almacén y piqueo FIFO para Centeno Tire (Retail Manager)."
+description: "Retail Manager Logistics & Warehouse — demo de logística de almacén y piqueo FIFO para Centeno Tire (Retail Manager)."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -17,6 +17,7 @@ dependencies:
   collection: ^1.19.1
   http: ^1.6.0
   crypto: ^3.0.7
+  archive: ^4.5.2
 
 dev_dependencies:
   flutter_test:

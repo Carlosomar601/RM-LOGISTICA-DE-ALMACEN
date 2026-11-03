@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/tone.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
@@ -168,6 +169,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with SingleTickerProv
                     onDigit: _digit,
                     onBack: _back,
                   ),
+                  if (s.dataStoreError != null) ...[
+                    const SizedBox(height: 22),
+                    const NoteBox(
+                      'Los datos del almacén no se pudieron leer. Un administrador debe entrar y restaurar '
+                      'un respaldo en Administración → Respaldos.',
+                      tone: Tone.crit,
+                    ),
+                  ],
                   if (demo) ...[
                     const SizedBox(height: 22),
                     NoteBox(

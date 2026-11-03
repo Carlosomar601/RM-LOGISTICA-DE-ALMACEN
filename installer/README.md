@@ -1,4 +1,4 @@
-# Instalador de Piqueo FIFO Centeno
+# Instalador de Retail Manager Logistics & Warehouse
 
 Instalador de Windows (Inno Setup 6) que funciona **sin internet**: lleva dentro la app y el runtime de Visual C++.
 
@@ -8,13 +8,13 @@ Instalador de Windows (Inno Setup 6) que funciona **sin internet**: lleva dentro
 powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1     # -SkipBuild para no recompilar
 ```
 
-Resultado: `installer\Output\PiqueoFIFO-Setup-<versión>.exe` (~34 MB). La versión sale de `pubspec.yaml`.
+Resultado: `installer\Output\RMLogistics-Setup-<versión>.exe` (~34 MB). La versión sale de `pubspec.yaml`.
 Requisitos en la PC que compila: Flutter, Inno Setup 6 e internet **solo la primera vez**, para descargar
 `VC_redist.x64.exe` de Microsoft a `installer\redist\` (se verifica la firma de Microsoft).
 
 ## Qué hace al instalar
 
-1. Copia la app a `C:\Program Files\Retail Manager\Piqueo FIFO`.
+1. Copia la app a `C:\Program Files\Retail Manager\Logistics & Warehouse` (una actualización conserva la carpeta donde ya estaba instalada).
 2. Instala el runtime de Visual C++ si falta (desde el propio instalador).
 3. Pide la dirección de RMApiV2 (por defecto `http://localhost:8180`), con botón *Probar conexión*.
    La guarda en `C:\ProgramData\RetailManager\PiqueoFIFO\config.json`; la app la usa al abrir.
@@ -27,13 +27,15 @@ Requisitos en la PC que compila: Flutter, Inno Setup 6 e internet **solo la prim
    administrador activo con PIN; si no, falla), la configuración, `HealthCheck` y `RecReceiptsByDate` (solo lectura).
    El resultado aparece en la última página del asistente y en `C:\ProgramData\RetailManager\PiqueoFIFO\selftest.log`.
    Las órdenes (`OrdOpenOrders`) y facturas (`SalesInvoicesByDate`) se revisan sin hacer fallar la prueba:
-   si la API aún no las tiene, aparecen como "aún no disponible".
-8. Deja la app abierta, en la pantalla de PIN.
+   si la API aún no las tiene, aparecen como "aún no disponible". También informa el estado de `data.json`
+   (sin hacer fallar: un archivo dañado se resuelve en la app restaurando un respaldo).
+8. Deja la app abierta, en la pantalla de PIN. En el primer arranque el almacén está vacío (solo el almacén
+   central con RECIBO y AL-RX) y la app usa la fecha real; los datos de demostración son solo para desarrollo.
 
 ## Instalación silenciosa
 
 ```
-PiqueoFIFO-Setup-1.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /API=http://servidor:8180 /LOG=C:\ruta\setup.log
+RMLogistics-Setup-1.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /API=http://servidor:8180 /LOG=C:\ruta\setup.log
 ```
 
 En un PC **nuevo** (sin `users.json`) agrega `/ADMINNAME="Nombre Apellido" /ADMINPIN=1234`; sin ellos la instalación
@@ -45,8 +47,8 @@ Código de salida: `0` instalado y prueba final OK; `100` instalado, pero la pru
 Nota: `Start-Process -Wait` de PowerShell no termina, porque espera también a la app que queda abierta;
 usa `-PassThru` y espera el proceso del instalador por su cuenta.
 
-Desinstalar desde *Configuración → Aplicaciones*; se conservan `config.json`, `users.json` y `audit.log` para una
-reinstalación. Si se borra `users.json` en un PC instalado, la app no deja entrar a nadie (nunca vuelve a usuarios de
+Desinstalar desde *Configuración → Aplicaciones*; se conservan `config.json`, `users.json`, `audit.log`,
+`data.json` (datos del almacén), `ledger.json`, `backup.json` y la carpeta `backups\` para una reinstalación. Si se borra `users.json` en un PC instalado, la app no deja entrar a nadie (nunca vuelve a usuarios de
 demostración): vuelve a ejecutar el instalador para crear el administrador.
 
 ## Prueba sin red (Windows Sandbox)

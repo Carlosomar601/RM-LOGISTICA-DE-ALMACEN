@@ -59,7 +59,21 @@ class UserStoreData {
     }
     if (file == null || !file.existsSync()) return demo();
     try {
-      final j = jsonDecode(file.readAsStringSync());
+      return parse(file.readAsStringSync(), source: file.path);
+    } catch (e) {
+      return UserStoreData(
+        status: UserStoreStatus.broken,
+        users: [],
+        rolePresets: {for (final r in kRoles) r: rolePreset(r)},
+        error: 'No se pudo leer ${file.path}: $e',
+      );
+    }
+  }
+
+  /// Contenido de un users.json (también el de un respaldo). [status] queda broken si no se lee.
+  static UserStoreData parse(String text, {String source = 'users.json'}) {
+    try {
+      final j = jsonDecode(text);
       if (j is! Map || j['users'] is! List) throw const FormatException('falta la lista "users"');
       final users = [
         for (final u in j['users'] as List) AppUser.fromJson(Map<String, dynamic>.from(u as Map)),
@@ -84,10 +98,27 @@ class UserStoreData {
         status: UserStoreStatus.broken,
         users: [],
         rolePresets: {for (final r in kRoles) r: rolePreset(r)},
-        error: 'No se pudo leer ${file.path}: $e',
+        error: 'No se pudo leer $source: $e',
       );
     }
   }
+
+  /// Al menos un administrador activo con PIN: si no, nadie podría entrar.
+  bool get hasLoginAdmin => users.any((u) => u.active && u.can(Area.users) && u.hasPin);
+
+  static String encode({
+    required List<AppUser> users,
+    required Map<String, Map<Area, bool>> rolePresets,
+    required int autoLogoutMinutes,
+  }) =>
+      const JsonEncoder.withIndent(' ').convert({
+        'version': 1,
+        'users': [for (final u in users) u.toJson()],
+        'rolePresets': {
+          for (final e in rolePresets.entries) e.key: [for (final a in Area.values) if (e.value[a] == true) a.name],
+        },
+        'autoLogoutMinutes': autoLogoutMinutes,
+      });
 
   static void save(
     File? file, {
@@ -96,14 +127,7 @@ class UserStoreData {
     required int autoLogoutMinutes,
   }) {
     if (file == null) return;
-    final json = const JsonEncoder.withIndent(' ').convert({
-      'version': 1,
-      'users': [for (final u in users) u.toJson()],
-      'rolePresets': {
-        for (final e in rolePresets.entries) e.key: [for (final a in Area.values) if (e.value[a] == true) a.name],
-      },
-      'autoLogoutMinutes': autoLogoutMinutes,
-    });
+    final json = encode(users: users, rolePresets: rolePresets, autoLogoutMinutes: autoLogoutMinutes);
     file.parent.createSync(recursive: true);
     final tmp = File('${file.path}.tmp')..writeAsStringSync(json);
     if (file.existsSync()) file.deleteSync();

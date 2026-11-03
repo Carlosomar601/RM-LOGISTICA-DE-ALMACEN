@@ -3,7 +3,9 @@ import 'dart:io';
 import 'api/rm_api.dart';
 import 'auth/user_store.dart';
 import 'config/app_config.dart';
+import 'data/data_store.dart';
 import 'models/app_user.dart';
+import 'state/app_state.dart';
 import 'util/format.dart';
 
 /// Resultado de una verificación del autodiagnóstico.
@@ -19,9 +21,10 @@ class SelfTestCheck {
 
 /// Autodiagnóstico posinstalación (`--selftest`). Solo lectura contra RM.
 Future<List<SelfTestCheck>> runSelfTest(AppConfig config,
-    {RmApi Function(String url)? apiFactory, DateTime? now, File? usersFile}) async {
+    {RmApi Function(String url)? apiFactory, DateTime? now, File? usersFile, File? dataFile}) async {
   final checks = <SelfTestCheck>[];
   if (usersFile != null) checks.add(checkUsers(usersFile));
+  if (dataFile != null) checks.add(checkData(dataFile));
   final url = config.apiUrl;
   if (config.source == null) {
     checks.add(const SelfTestCheck('Configuración', false, 'no se encontró config.json'));
@@ -71,20 +74,43 @@ SelfTestCheck checkUsers(File usersFile) {
   return SelfTestCheck(name, true, '${data.users.length} usuario(s), $admins administrador(es) con PIN');
 }
 
+/// Datos del almacén: informa, pero no hace fallar la instalación (un data.json dañado se
+/// resuelve en la app restaurando un respaldo).
+SelfTestCheck checkData(File dataFile) {
+  const name = 'Datos (data.json)';
+  final load = DataStore.load(dataFile);
+  switch (load.status) {
+    case DataStoreStatus.missing:
+      return const SelfTestCheck(name, true, 'aún no hay datos (primer arranque: almacén vacío)');
+    case DataStoreStatus.broken:
+      return SelfTestCheck(name, true, 'aviso: ${load.error} - restaura un respaldo en Administración');
+    case DataStoreStatus.ok:
+      try {
+        final s = AppState.fromDataJson(load.json!);
+        return SelfTestCheck(name, true,
+            '${s.products.length} producto(s), ${s.totalUnits} unidad(es), ${s.orders.length} orden(es)');
+      } catch (e) {
+        return SelfTestCheck(name, true, 'aviso: datos dañados ($e) - restaura un respaldo en Administración');
+      }
+  }
+}
+
 bool selfTestPassed(List<SelfTestCheck> checks) => checks.isNotEmpty && checks.every((c) => c.ok);
 
 /// Escribe `selftest.log` junto a la configuración y devuelve el código de salida.
 Future<int> runSelfTestAndLog(AppConfig config, {File? log}) async {
   List<SelfTestCheck> checks;
   try {
-    checks = await runSelfTest(config, usersFile: defaultUserStoreFile());
+    final shared = defaultSharedDir();
+    checks = await runSelfTest(config,
+        usersFile: defaultUserStoreFile(), dataFile: shared == null ? null : File('${shared.path}\\data.json'));
   } catch (e) {
     checks = [SelfTestCheck('Autodiagnóstico', false, 'error inesperado: $e')];
   }
   final pass = selfTestPassed(checks);
   final out = log ?? File('${AppConfig.configDir().path}\\selftest.log');
   final text = [
-    'Piqueo FIFO Centeno — autodiagnóstico ${DateTime.now().toIso8601String()}',
+    'Retail Manager Logistics & Warehouse — autodiagnóstico ${DateTime.now().toIso8601String()}',
     'App: ${Platform.resolvedExecutable}',
     ...checks.map((c) => c.toString()),
     'RESULT: ${pass ? 'PASS' : 'FAIL'}',

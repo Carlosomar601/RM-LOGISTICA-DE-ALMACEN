@@ -1,3 +1,5 @@
+import 'json_util.dart';
+
 /// Un registro de inventario: un producto en una localización (bin) de una tienda.
 class InvRow {
   InvRow({
@@ -32,5 +34,29 @@ class InvRow {
         receipt: receipt,
         lot: lot,
         user: user,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'productId': productId,
+        'store': store,
+        'bin': bin,
+        'qty': qty,
+        'entryDate': entryDate.toIso8601String(),
+        'receipt': receipt,
+        'lot': lot,
+        'user': user,
+      };
+
+  factory InvRow.fromJson(Map j) => InvRow(
+        id: jStr(j, 'id'),
+        productId: jStr(j, 'productId'),
+        store: jStr(j, 'store'),
+        bin: jStr(j, 'bin'),
+        qty: jInt(j, 'qty'),
+        entryDate: jDate(j, 'entryDate'),
+        receipt: jStr(j, 'receipt'),
+        lot: jStr(j, 'lot'),
+        user: jStr(j, 'user'),
       );
 }

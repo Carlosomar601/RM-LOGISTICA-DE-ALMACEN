@@ -1,6 +1,13 @@
+import 'json_util.dart';
+
 enum StepStatus { pending, picked, missingHere }
 
 enum ShortfallStatus { unresolved, missing }
+
+T _enum<T extends Enum>(List<T> values, Map j, String key) {
+  final name = jStr(j, key);
+  return values.firstWhere((v) => v.name == name, orElse: () => throw FormatException('campo "$key" inválido: $name'));
+}
 
 class PickStep {
   PickStep({
@@ -22,6 +29,28 @@ class PickStep {
   final int available;
   final int take;
   StepStatus status;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'invId': invId,
+        'bin': bin,
+        'receipt': receipt,
+        'entryDate': entryDate.toIso8601String(),
+        'available': available,
+        'take': take,
+        'status': status.name,
+      };
+
+  factory PickStep.fromJson(Map j) => PickStep(
+        id: jStr(j, 'id'),
+        invId: jStr(j, 'invId'),
+        bin: jStr(j, 'bin'),
+        receipt: jStr(j, 'receipt'),
+        entryDate: jDate(j, 'entryDate'),
+        available: jInt(j, 'available'),
+        take: jInt(j, 'take'),
+        status: _enum(StepStatus.values, j, 'status'),
+      );
 }
 
 class Shortfall {
@@ -30,6 +59,11 @@ class Shortfall {
   final String id;
   int take;
   ShortfallStatus status;
+
+  Map<String, dynamic> toJson() => {'id': id, 'take': take, 'status': status.name};
+
+  factory Shortfall.fromJson(Map j) =>
+      Shortfall(id: jStr(j, 'id'), take: jInt(j, 'take'), status: _enum(ShortfallStatus.values, j, 'status'));
 }
 
 class PickSession {
@@ -48,4 +82,22 @@ class PickSession {
   final String doc;
   final List<PickStep> steps;
   Shortfall? shortfall;
+
+  Map<String, dynamic> toJson() => {
+        'key': key,
+        'productId': productId,
+        'qtyRequested': qtyRequested,
+        'doc': doc,
+        'steps': [for (final s in steps) s.toJson()],
+        if (shortfall != null) 'shortfall': shortfall!.toJson(),
+      };
+
+  factory PickSession.fromJson(Map j) => PickSession(
+        key: jStr(j, 'key'),
+        productId: jStr(j, 'productId'),
+        qtyRequested: jInt(j, 'qtyRequested'),
+        doc: jStr(j, 'doc'),
+        steps: [for (final s in jList(j, 'steps')) PickStep.fromJson(s)],
+        shortfall: j['shortfall'] is Map ? Shortfall.fromJson(j['shortfall'] as Map) : null,
+      );
 }

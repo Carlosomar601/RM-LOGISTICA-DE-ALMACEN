@@ -1,3 +1,4 @@
+import 'json_util.dart';
 import 'tone.dart';
 
 class Movement {
@@ -22,6 +23,30 @@ class Movement {
   final DateTime dateTime;
   final String from;
   final String to;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type,
+        'productId': productId,
+        'qty': qty,
+        'doc': doc,
+        'user': user,
+        'dateTime': dateTime.toIso8601String(),
+        'from': from,
+        'to': to,
+      };
+
+  factory Movement.fromJson(Map j) => Movement(
+        id: jStr(j, 'id'),
+        type: jStr(j, 'type'),
+        productId: jStr(j, 'productId'),
+        qty: jInt(j, 'qty'),
+        doc: jStr(j, 'doc'),
+        user: jStr(j, 'user'),
+        dateTime: jDate(j, 'dateTime'),
+        from: jStr(j, 'from'),
+        to: jStr(j, 'to'),
+      );
 }
 
 class MovementType {
