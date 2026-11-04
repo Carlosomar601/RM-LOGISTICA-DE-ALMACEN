@@ -45,6 +45,7 @@ Area _area_(CmdArgs a, String k) => Area.values.byName(_s(a, k));
 const _users = Area.users;
 final _picking = _anyOf([Area.orders, Area.picking]);
 final _counting = _anyOf([Area.audit, Area.auditManage]);
+final _reviewPickMissing = _anyOf([Area.auditManage, Area.returns]);
 
 /// Todas las acciones remotas por nombre. El nombre coincide con el método de [AppNotifier].
 final Map<String, RemoteCommand> kRemoteCommands = {
@@ -263,6 +264,40 @@ final Map<String, RemoteCommand> kRemoteCommands = {
   'writeOffPending': RemoteCommand(
     (n, a) => n.writeOffPending(_s(a, 'id'), _i(a, 'qty'), _s(a, 'reason'), note: _sn(a, 'note') ?? ''),
     can: _area(Area.auditManage),
+    errorOf: _str,
+  ),
+
+  // ---------- Auditoría: devoluciones ----------
+  'acceptReturn': RemoteCommand(
+    (n, a) => n.acceptReturn(
+      _s(a, 'id'),
+      _i(a, 'qty'),
+      DateTime.parse(_s(a, 'entryDate')),
+      condition: _sn(a, 'condition') ?? '',
+      note: _sn(a, 'note') ?? '',
+    ),
+    can: _area(Area.returns),
+    errorOf: _str,
+  ),
+  'acceptReturns': RemoteCommand((n, a) => n.acceptReturns(_ls(a, 'ids')), can: _area(Area.returns)),
+  'writeOffReturn': RemoteCommand(
+    (n, a) => n.writeOffReturn(_s(a, 'id'), _i(a, 'qty'), _s(a, 'reason'), note: _sn(a, 'note') ?? ''),
+    can: _area(Area.returns),
+    errorOf: _str,
+  ),
+  'discardReturn': RemoteCommand(
+    (n, a) => n.discardReturn(_s(a, 'id'), _i(a, 'qty'), _s(a, 'reason'), note: _sn(a, 'note') ?? ''),
+    can: _area(Area.returns),
+    errorOf: _str,
+  ),
+  'resolvePickMissingFound': RemoteCommand(
+    (n, a) => n.resolvePickMissingFound(_s(a, 'id'), _s(a, 'bin'), _i(a, 'qty')),
+    can: _reviewPickMissing,
+    errorOf: _str,
+  ),
+  'writeOffPickMissing': RemoteCommand(
+    (n, a) => n.writeOffPickMissing(_s(a, 'id'), _i(a, 'qty'), _s(a, 'reason'), note: _sn(a, 'note') ?? ''),
+    can: _reviewPickMissing,
     errorOf: _str,
   ),
 };

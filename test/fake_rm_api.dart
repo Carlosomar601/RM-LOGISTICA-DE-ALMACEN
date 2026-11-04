@@ -68,15 +68,23 @@ RmInvoiceLine iline(
   String categoryName = '',
   int? priceLevel,
   String priceLevelName = '',
+  String lineId = '',
+  DateTime? date,
+  String original = '',
+  DateTime? originalDate,
+  bool service = false,
 }) =>
     RmInvoiceLine(
       voidedQuantity: voided,
       invoiceNumber: invoice,
-      invoiceDate: DateTime(2026, 10, 13, 15),
+      invoiceDate: date ?? DateTime(2026, 10, 13, 15),
       customer: 'C1',
       customerName: customer,
       orderNumber: order,
-      lineId: '$invoice-$code',
+      lineId: lineId.isEmpty ? '$invoice-$code' : lineId,
+      originalInvoice: original,
+      originalInvoiceDate: originalDate,
+      isService: service,
       itemCode: code,
       description: 'Desc $code',
       quantity: qty,
@@ -85,6 +93,34 @@ RmInvoiceLine iline(
       categoryName: categoryName,
       priceLevelId: priceLevel,
       priceLevelName: priceLevelName,
+    );
+
+RmReturnLine rline(
+  String doc,
+  String code,
+  double qty, {
+  int type = 70,
+  String lineId = '',
+  DateTime? date,
+  String original = '',
+  DateTime? originalDate,
+  bool service = false,
+  bool fuel = false,
+}) =>
+    RmReturnLine(
+      returnNumber: doc,
+      returnType: type,
+      returnDate: date ?? DateTime(2026, 10, 20, 11),
+      lineId: lineId.isEmpty ? '$doc-$code' : lineId,
+      itemCode: code,
+      description: 'Desc $code',
+      quantity: qty,
+      originalInvoice: original,
+      originalInvoiceDate: originalDate,
+      customer: 'C1',
+      customerName: 'Ferretería Cliente',
+      isService: service,
+      isFuel: fuel,
     );
 
 /// API falsa para pruebas: `health == null` significa conexión correcta.
@@ -98,6 +134,7 @@ class FakeRmApi implements RmApi {
     List<RmInvoiceLine>? invoices,
     this.ordersError,
     this.invoicesError,
+    this.returns,
     this.delay = Duration.zero,
   })  : orders = orders ?? [],
         invoices = invoices ?? [];
@@ -108,9 +145,14 @@ class FakeRmApi implements RmApi {
   List<RmInvoiceLine> invoices;
   RmApiException? ordersError;
   RmApiException? invoicesError;
+
+  /// null = la API aún no tiene `SalesReturnsByDate` (se usa la fuente provisional).
+  List<RmReturnLine>? returns;
   final Duration delay;
   int calls = 0;
   DateTime? lastFrom;
+  DateTime? lastInvoicesFrom;
+  DateTime? lastReturnsFrom;
 
   @override
   Future<String> healthCheck() async {
@@ -135,7 +177,16 @@ class FakeRmApi implements RmApi {
 
   @override
   Future<List<RmInvoiceLine>> invoicesByDate(DateTime from, DateTime to) async {
+    lastInvoicesFrom = from;
     if (invoicesError != null) throw invoicesError!;
     return invoices;
+  }
+
+  @override
+  Future<List<RmReturnLine>> returnsByDate(DateTime from, DateTime to) async {
+    lastReturnsFrom = from;
+    final r = returns;
+    if (r == null) throw RmApiException('SalesReturnsByDate no existe todavía en esta API.', notAvailable: true);
+    return r;
   }
 }

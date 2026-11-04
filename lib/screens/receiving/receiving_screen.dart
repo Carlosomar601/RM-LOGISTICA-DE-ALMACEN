@@ -68,8 +68,14 @@ class _ReceivingScreenState extends ConsumerState<ReceivingScreen> {
             child: ExpandableCard(
               title: '${r.id} — ${r.supplier}',
               monoTitle: false,
-              subtitle: '${r.items.length} artículo(s) · recibido ${fmtDate(r.date)}',
-              trailing: const AppBadge('Pendiente de ubicar', tone: Tone.warn),
+              subtitle: r.isReturn
+                  ? 'Devolución aceptada · entra con fecha ${fmtDate(r.date)}'
+                      '${r.refDoc == null ? '' : ' · factura original ${r.refDoc}'}'
+                  : '${r.items.length} artículo(s) · recibido ${fmtDate(r.date)}',
+              trailing: Wrap(spacing: 6, children: [
+                if (r.isReturn) const AppBadge('Devolución', tone: Tone.accent),
+                const AppBadge('Pendiente de ubicar', tone: Tone.warn),
+              ]),
               expanded: _expanded.contains(r.id),
               onToggle: () => setState(() => _expanded.contains(r.id) ? _expanded.remove(r.id) : _expanded.add(r.id)),
               child: Column(

@@ -75,6 +75,7 @@ const kMovementTypes = <String, MovementType>{
   'auditoria-sobrante': MovementType('auditoria-sobrante', Tone.accent, 'Sobrante auditoría'),
   'pendiente-encontrado': MovementType('pendiente-encontrado', Tone.good, 'Pendiente encontrado'),
   'baja': MovementType('baja', Tone.crit, 'Baja'),
+  'devolucion': MovementType('devolucion', Tone.good, 'Devolución'),
 };
 
 /// Filtros del Historial (key null = todos).
@@ -91,5 +92,6 @@ const kHistoryFilters = <(String?, String)>[
   ('a-pendientes', 'Enviado a PENDIENTES'),
   ('auditoria-sobrante', 'Sobrantes de auditoría'),
   ('pendiente-encontrado', 'Pendientes encontrados'),
-  ('baja', 'Bajas de pendientes'),
+  ('baja', 'Bajas (pendientes y devoluciones)'),
+  ('devolucion', 'Devoluciones reingresadas'),
 ];

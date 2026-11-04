@@ -28,12 +28,19 @@ extension SyncIntervalX on SyncInterval {
 /// Ventas en caja por defecto (registradora): no se despachan del almacén.
 const kDefaultSkipTransactions = <int>{10, 11, 12, 19};
 
+/// Primera detección de devoluciones: 30 días hacia atrás (cabe en una llamada de la API).
+const kDefaultReturnsFirstRunDays = 30;
+const kMaxReturnsFirstRunDays = 31;
+
 class SyncSettings {
   SyncSettings({
     this.interval = SyncInterval.manual,
     this.lookbackDays = 2,
     this.lastSync,
     Set<int>? skipTransactions,
+    this.returnsEnabled = false,
+    this.returnsFirstRunDays = kDefaultReturnsFirstRunDays,
+    this.returnsLastSync,
   }) : skipTransactions = skipTransactions ?? {...kDefaultSkipTransactions};
 
   SyncInterval interval;
@@ -46,11 +53,24 @@ class SyncSettings {
   /// Tipos de transacción de factura que no generan despacho (ventas en caja).
   Set<int> skipTransactions;
 
+  /// Detectar devoluciones del almacén central. Apagado hasta verificar en la base real
+  /// el signo de las cantidades y el doble conteo de anulaciones parciales.
+  bool returnsEnabled;
+
+  /// Días hacia atrás en la primera detección de devoluciones (máx. una llamada de 31 días).
+  int returnsFirstRunDays;
+
+  /// Última detección de devoluciones correcta (null = nunca: se usa [returnsFirstRunDays]).
+  DateTime? returnsLastSync;
+
   Map<String, dynamic> toJson() => {
         'interval': interval.name,
         'lookbackDays': lookbackDays,
         if (lastSync != null) 'lastSync': lastSync!.toIso8601String(),
         'skipTransactions': (skipTransactions.toList()..sort()),
+        'returnsEnabled': returnsEnabled,
+        'returnsFirstRunDays': returnsFirstRunDays,
+        if (returnsLastSync != null) 'returnsLastSync': returnsLastSync!.toIso8601String(),
       };
 
   static SyncSettings fromJson(Map j) => SyncSettings(
@@ -60,6 +80,10 @@ class SyncSettings {
         skipTransactions: j['skipTransactions'] is List
             ? {for (final v in j['skipTransactions'] as List) if (v is num) v.toInt()}
             : null,
+        returnsEnabled: j['returnsEnabled'] == true,
+        returnsFirstRunDays:
+            ((j['returnsFirstRunDays'] as num?)?.toInt() ?? kDefaultReturnsFirstRunDays).clamp(1, kMaxReturnsFirstRunDays),
+        returnsLastSync: DateTime.tryParse('${j['returnsLastSync'] ?? ''}'),
       );
 
   /// "10, 11 12;19" → {10, 11, 12, 19}. Devuelve null si hay algo que no es número.

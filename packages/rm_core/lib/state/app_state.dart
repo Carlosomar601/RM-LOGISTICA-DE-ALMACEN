@@ -21,6 +21,7 @@ import '../models/pending_item.dart';
 import '../models/pick_session.dart';
 import '../models/product.dart';
 import '../models/receipt.dart';
+import '../models/return_entry.dart';
 import '../models/store_transfer.dart';
 import '../sync/dispatch_ledger.dart';
 import '../sync/sync_settings.dart';
@@ -108,6 +109,8 @@ class AppState {
     required this.importedLineIds,
     List<Audit>? audits,
     List<PendingItem>? pendingItems,
+    List<ReturnEntry>? returns,
+    Set<String>? importedReturnIds,
     this.currentView = AppView.dashboard,
     this.simulatedUserId,
     this.currentUserId,
@@ -131,8 +134,11 @@ class AppState {
     this.productSeq = 11,
     this.auditSeq = 1,
     this.pendingSeq = 1,
+    this.returnSeq = 1001,
   })  : audits = audits ?? [],
-        pendingItems = pendingItems ?? [];
+        pendingItems = pendingItems ?? [],
+        returns = returns ?? [],
+        importedReturnIds = importedReturnIds ?? {};
 
   factory AppState.seed() => AppState(
         products: seedProducts(),
@@ -195,6 +201,8 @@ class AppState {
         'importedLineIds': (importedLineIds.toList()..sort()),
         'audits': [for (final x in audits) x.toJson()],
         'pendingItems': [for (final x in pendingItems) x.toJson()],
+        'returns': [for (final x in returns) x.toJson()],
+        'importedReturnIds': (importedReturnIds.toList()..sort()),
         if (lastConfigApiUrl != null) 'lastConfigApiUrl': lastConfigApiUrl,
         'seq': {
           'order': orderSeq,
@@ -210,6 +218,7 @@ class AppState {
           'product': productSeq,
           'audit': auditSeq,
           'pending': pendingSeq,
+          'return': returnSeq,
         },
       };
 
@@ -244,6 +253,8 @@ class AppState {
       audits: j['audits'] == null ? [] : [for (final x in jList(j, 'audits')) Audit.fromJson(x)],
       pendingItems:
           j['pendingItems'] == null ? [] : [for (final x in jList(j, 'pendingItems')) PendingItem.fromJson(x)],
+      returns: j['returns'] == null ? [] : [for (final x in jList(j, 'returns')) ReturnEntry.fromJson(x)],
+      importedReturnIds: jStrings(j, 'importedReturnIds').toSet(),
       lastConfigApiUrl: jStrOrNull(j, 'lastConfigApiUrl'),
       orderSeq: jInt(seq, 'order'),
       receiptSeq: jInt(seq, 'receipt'),
@@ -258,6 +269,7 @@ class AppState {
       productSeq: jInt(seq, 'product'),
       auditSeq: jIntOrNull(seq, 'audit') ?? 1,
       pendingSeq: jIntOrNull(seq, 'pending') ?? 1,
+      returnSeq: jIntOrNull(seq, 'return') ?? 1001,
     );
   }
 
@@ -277,6 +289,12 @@ class AppState {
   final Set<String> importedLineIds;
   final List<Audit> audits;
   final List<PendingItem> pendingItems;
+
+  /// Devoluciones detectadas en RM (almacén central), por revisar o ya revisadas.
+  final List<ReturnEntry> returns;
+
+  /// Líneas de devolución ya importadas desde RM: `storeId|documento|LineID`.
+  final Set<String> importedReturnIds;
   final Map<String, Map<Area, bool>> rolePresets;
   AppView currentView;
   String? simulatedUserId;
@@ -297,7 +315,7 @@ class AppState {
   /// Motivo del último cierre automático, para mostrarlo en la pantalla de PIN.
   String? logoutReason;
   StoreTransferPrefill? transferPrefill;
-  int orderSeq, receiptSeq, lotSeq, tbSeq, tsSeq, movementSeq, invSeq, stepSeq, userSeq, prefillSeq, storeSeq, binSeq, productSeq, auditSeq, pendingSeq;
+  int orderSeq, receiptSeq, lotSeq, tbSeq, tsSeq, movementSeq, invSeq, stepSeq, userSeq, prefillSeq, storeSeq, binSeq, productSeq, auditSeq, pendingSeq, returnSeq;
 
   /// Copia superficial: nueva identidad para notificar a Riverpod.
   AppState clone() => AppState(
@@ -317,6 +335,8 @@ class AppState {
         importedLineIds: importedLineIds,
         audits: audits,
         pendingItems: pendingItems,
+        returns: returns,
+        importedReturnIds: importedReturnIds,
         currentView: currentView,
         simulatedUserId: simulatedUserId,
         currentUserId: currentUserId,
@@ -340,6 +360,7 @@ class AppState {
         productSeq: productSeq,
         auditSeq: auditSeq,
         pendingSeq: pendingSeq,
+        returnSeq: returnSeq,
       );
 
   // ---------- Selectores ----------
@@ -401,7 +422,7 @@ class AppState {
     final u = simulatedUser ?? currentUser;
     final a = v.area;
     if (u == null || a == null) return true;
-    if (v == AppView.audit) return u.can(Area.audit) || u.can(Area.auditManage);
+    if (v == AppView.audit) return u.can(Area.audit) || u.can(Area.auditManage) || u.can(Area.returns);
     return u.can(a);
   }
 
@@ -410,6 +431,29 @@ class AppState {
     final u = simulatedUser ?? currentUser;
     return u == null || u.can(Area.auditManage);
   }
+
+  /// Revisa devoluciones y faltantes de piqueo (pestaña Auditoría ▸ Devoluciones).
+  bool get canReviewReturns {
+    final u = simulatedUser ?? currentUser;
+    return u == null || u.can(Area.returns);
+  }
+
+  /// Cuenta en auditorías (Auditor, o quien las administra).
+  bool get canCountAudits {
+    final u = simulatedUser ?? currentUser;
+    return u == null || u.can(Area.audit) || u.can(Area.auditManage);
+  }
+
+  // ---------- Devoluciones ----------
+
+  List<ReturnEntry> get openReturns => returns.where((r) => r.isOpen).toList();
+
+  /// «No estaba aquí» del piqueo, aún sin resolver (también salen en la pestaña Devoluciones).
+  List<PendingItem> get pickMissingOpen =>
+      pendingItems.where((p) => p.isOpen && p.reason == kPickMissingReason).toList();
+
+  /// Elementos por revisar en la pestaña Devoluciones.
+  int get returnsToReview => openReturns.length + pickMissingOpen.length;
 
   // ---------- Auditoría y PENDIENTES ----------
 
@@ -526,6 +570,37 @@ class ImportResult {
     required this.productsCreated,
   });
   final int lines, duplicates, skipped, fractional, receiptsCreated, receiptsUpdated, productsCreated;
+}
+
+class ReturnImportResult {
+  const ReturnImportResult({
+    this.created = 0,
+    this.duplicates = 0,
+    this.skipped = 0,
+    this.fractional = 0,
+    this.productsCreated = 0,
+    this.provisional = false,
+  });
+  final int created, duplicates, skipped, fractional, productsCreated;
+
+  /// Se leyó de `SalesInvoicesByDate` porque `SalesReturnsByDate` aún no existe.
+  final bool provisional;
+
+  ReturnImportResult withProvisional(bool v) => ReturnImportResult(
+        created: created,
+        duplicates: duplicates,
+        skipped: skipped,
+        fractional: fractional,
+        productsCreated: productsCreated,
+        provisional: v,
+      );
+
+  String get summary => [
+        '$created por revisar',
+        if (skipped > 0) '$skipped línea(s) omitida(s)',
+        if (fractional > 0) '$fractional cantidad(es) redondeada(s)',
+        if (provisional) 'fuente provisional (facturas)',
+      ].join(' · ');
 }
 
 class OrderSyncResult {
@@ -804,8 +879,13 @@ class AppNotifier extends Notifier<AppState> {
     final lock = _lockError([for (final (bin, _) in valid) bin]);
     if (lock != null) return lock;
     for (final (bin, qty) in valid) {
-      final existing = state.inventory.firstWhereOrNull(
-          (r) => r.productId == productId && r.store == kCentral && r.bin == bin && r.qty > 0);
+      // Una devolución entra con su propia fecha FIFO: solo se suma a una fila de su mismo recibo.
+      final existing = state.inventory.firstWhereOrNull((r) =>
+          r.productId == productId &&
+          r.store == kCentral &&
+          r.bin == bin &&
+          r.qty > 0 &&
+          (!rec.isReturn || (r.receipt == rec.id && r.entryDate == rec.date)));
       if (existing != null) {
         existing.qty += qty;
       } else {
@@ -821,7 +901,12 @@ class AppNotifier extends Notifier<AppState> {
           user: state.actor,
         ));
       }
-      _log(_mv('entrada', productId, qty, rec.id, '—', '$kCentral / $bin'));
+      if (rec.isReturn) {
+        _log(_mv('devolucion', productId, qty, rec.id, 'Devolución', '$kCentral / $bin',
+            note: rec.refDoc == null ? null : 'Factura original ${rec.refDoc}'));
+      } else {
+        _log(_mv('entrada', productId, qty, rec.id, '—', '$kCentral / $bin'));
+      }
     }
     item.qtyAllocated += sum;
     _emit();
@@ -1255,6 +1340,270 @@ class AppNotifier extends Notifier<AppState> {
       voidUpdated: voidUpdated,
       voidFlagged: voidFlagged,
     );
+  }
+
+  // ---------- Devoluciones (RM → revisión → Recibido sin ubicar) ----------
+
+  /// Trae las devoluciones del almacén. Si la API aún no tiene `SalesReturnsByDate`, las saca
+  /// de `SalesInvoicesByDate` (Transaccion 70/71). El segundo valor indica la fuente provisional.
+  Future<(List<RmReturnLine>, bool)> fetchReturns(String storeId, DateTime from, DateTime to) async {
+    final api = _apiFor(storeId);
+    try {
+      return (await api.returnsByDate(from, to), false);
+    } on RmApiException catch (e) {
+      if (!e.notAvailable) rethrow;
+      final lines = await api.invoicesByDate(from, to);
+      return ([for (final l in lines) ?RmReturnLine.fromInvoiceLine(l)], true);
+    }
+  }
+
+  /// Por qué una línea de devolución no entra a revisión (null = entra).
+  static String? returnSkipReason(RmReturnLine l) {
+    if (l.returnNumber.isEmpty || l.lineId.isEmpty || l.itemCode.isEmpty) return 'datos incompletos';
+    if (!RmReturnLine.returnTypes.contains(l.returnType)) return 'no es devolución';
+    if (l.isFuel) return 'combustible';
+    if (l.isService) return 'servicio';
+    if (l.quantity.abs().round() <= 0) return 'cantidad ${l.quantity} se redondea a 0';
+    return null;
+  }
+
+  static String _returnContentKey(String doc, String code, int qty) => '$doc|${code.toLowerCase()}|$qty';
+
+  /// Registra devoluciones como «por revisar». Idempotente por `tienda|documento|LineID`; si la
+  /// fuente cambia y el LineID con ella, una línea con el mismo documento, artículo y cantidad
+  /// que una ya registrada tampoco se duplica.
+  ReturnImportResult importReturns(String storeId, List<RmReturnLine> lines) {
+    var created = 0, duplicates = 0, skipped = 0, fractional = 0, productsCreated = 0;
+    final batchKeys = {for (final l in lines) '$storeId|${l.returnNumber}|${l.lineId}'};
+    // Registradas antes con otro LineID: se pueden emparejar por contenido (una vez cada una).
+    // Una línea de RM aceptada o descartada en partes suma sus partes (`clave#…`).
+    final rmLines = <String, (String, String, int)>{};
+    for (final r in state.returns) {
+      final base = r.key.split('#').first;
+      if (!base.startsWith('$storeId|') || batchKeys.contains(base)) continue;
+      final prev = rmLines[base];
+      rmLines[base] = (r.docNumber, r.itemCode, (prev?.$3 ?? 0) + r.qty);
+    }
+    final byContent = <String, int>{};
+    for (final (doc, code, q) in rmLines.values) {
+      final c = _returnContentKey(doc, code, q);
+      byContent[c] = (byContent[c] ?? 0) + 1;
+    }
+    for (final l in lines) {
+      if (returnSkipReason(l) != null) {
+        skipped++;
+        continue;
+      }
+      final key = '$storeId|${l.returnNumber}|${l.lineId}';
+      if (state.importedReturnIds.contains(key)) {
+        duplicates++;
+        continue;
+      }
+      final raw = l.quantity.abs();
+      final qty = raw.round();
+      final content = _returnContentKey(l.returnNumber, l.itemCode, qty);
+      if ((byContent[content] ?? 0) > 0) {
+        byContent[content] = byContent[content]! - 1;
+        state.importedReturnIds.add(key);
+        duplicates++;
+        continue;
+      }
+      if (qty != raw) fractional++;
+      final (product, isNew) = _ensureProduct(l.itemCode, l.description);
+      if (isNew) productsCreated++;
+      final originalDate = l.originalInvoiceDate ??
+          (l.originalInvoice.isEmpty ? null : _rmOrder(OrderSource.rmInvoice, storeId, l.originalInvoice)?.date);
+      final (shipped, shipNote) = _shippedOf(storeId, l.originalInvoice, l.itemCode);
+      state.returns.insert(
+        0,
+        ReturnEntry(
+          id: 'DEV-${state.returnSeq++}',
+          key: key,
+          docNumber: l.returnNumber,
+          docType: l.returnType,
+          docDate: l.returnDate,
+          productId: product.id,
+          itemCode: l.itemCode,
+          qty: qty,
+          entryDate: originalDate ?? l.returnDate,
+          createdAt: kToday,
+          originalInvoice: l.originalInvoice,
+          originalDate: originalDate,
+          customer: l.customer,
+          customerName: l.customerName,
+          shipped: shipped,
+          shipNote: shipNote,
+          rmReason: l.reason,
+        ),
+      );
+      state.importedReturnIds.add(key);
+      created++;
+    }
+    if (created > 0 || duplicates > 0) _emit();
+    return ReturnImportResult(
+      created: created,
+      duplicates: duplicates,
+      skipped: skipped,
+      fractional: fractional,
+      productsCreated: productsCreated,
+    );
+  }
+
+  /// Cuánto despachó el almacén de la factura original, según el libro de despachos.
+  (int?, String?) _shippedOf(String storeId, String invoice, String itemCode) {
+    if (invoice.isEmpty) return (null, 'RM no indica la factura original.');
+    final ledger = ref.read(ledgerProvider);
+    final inv = ledger.invoice(storeId, invoice);
+    if (inv == null) {
+      return (
+        null,
+        'La factura $invoice no pasó por el almacén: venta en caja, anterior a los registros o de otra fecha.'
+      );
+    }
+    var picked = inv.pickedOf(itemCode);
+    // Factura enlazada a una orden: lo piqueado quedó anotado bajo la orden.
+    if (inv.appId.startsWith('ORD-')) {
+      picked += ledger.order(storeId, inv.appId.substring(4))?.pickedOf(itemCode) ?? 0;
+    }
+    if (picked <= 0) {
+      return (0, 'La factura $invoice entró al almacén, pero no se piqueó este artículo: no salió del almacén.');
+    }
+    return (picked, 'El almacén despachó $picked unidad(es) de este artículo en ${inv.appId}.');
+  }
+
+  String? _checkReturn(ReturnEntry? e) {
+    if (e == null) return 'Devolución no encontrada.';
+    if (!e.isOpen) return 'La devolución ${e.id} ya se revisó.';
+    return null;
+  }
+
+  /// Separa [qty] unidades de una devolución abierta (la parte nueva queda por revisar).
+  ReturnEntry _splitReturn(ReturnEntry e, int qty, {String suffix = '#parte'}) {
+    if (qty >= e.qty) return e;
+    e.qty -= qty;
+    final part = ReturnEntry(
+      id: 'DEV-${state.returnSeq++}',
+      key: '${e.key}$suffix',
+      docNumber: e.docNumber,
+      docType: e.docType,
+      docDate: e.docDate,
+      productId: e.productId,
+      itemCode: e.itemCode,
+      qty: qty,
+      entryDate: e.entryDate,
+      createdAt: e.createdAt,
+      originalInvoice: e.originalInvoice,
+      originalDate: e.originalDate,
+      customer: e.customer,
+      customerName: e.customerName,
+      shipped: e.shipped,
+      shipNote: e.shipNote,
+      rmReason: e.rmReason,
+    );
+    state.returns.insert(state.returns.indexOf(e) + 1, part);
+    return part;
+  }
+
+  void _close(ReturnEntry e, ReturnStatus st, {String? reason, String? note}) {
+    e
+      ..status = st
+      ..reviewedAt = kToday
+      ..reviewedBy = state.actor
+      ..reason = reason
+      ..note = (note == null || note.trim().isEmpty) ? null : note.trim();
+  }
+
+  /// Acepta [qty] unidades con fecha de entrada [entryDate]: crea el recibo tipo devolución
+  /// (mismo id) en «Recibido sin ubicar». Si llegaron menos, el resto queda descartado
+  /// («no llegó»). Devuelve error o null.
+  String? acceptReturn(String id, int qty, DateTime entryDate, {String condition = '', String note = ''}) {
+    final e = state.returns.firstWhereOrNull((x) => x.id == id);
+    final err = _checkReturn(e);
+    if (err != null) return err;
+    if (qty < 1 || qty > e!.qty) return 'La cantidad debe estar entre 1 y ${e!.qty}.';
+    if (ageDays(entryDate) < 0) return 'La fecha de entrada no puede ser futura.';
+    if (qty < e.qty) {
+      final rest = _splitReturn(e, e.qty - qty, suffix: '#resto');
+      _close(rest, ReturnStatus.descartada, reason: kReturnShortReason, note: 'Aceptadas $qty de ${qty + rest.qty}');
+    }
+    e.entryDate = entryDate;
+    _acceptOne(e, condition: condition, note: note);
+    _emit();
+    return null;
+  }
+
+  /// Acepta varias con su cantidad y fecha propuestas. Las que el almacén no despachó se
+  /// omiten (se revisan una por una).
+  ({int accepted, int skipped}) acceptReturns(List<String> ids) {
+    var accepted = 0, skipped = 0;
+    for (final id in ids) {
+      final e = state.returns.firstWhereOrNull((x) => x.id == id);
+      if (e == null || !e.isOpen || e.notShipped || ageDays(e.entryDate) < 0) {
+        skipped++;
+        continue;
+      }
+      _acceptOne(e);
+      accepted++;
+    }
+    if (accepted > 0) _emit();
+    return (accepted: accepted, skipped: skipped);
+  }
+
+  /// Cierra como aceptada y crea su recibo (mismo id, fecha = fecha de entrada elegida).
+  void _acceptOne(ReturnEntry e, {String condition = '', String note = ''}) {
+    _close(e, ReturnStatus.aceptada, reason: condition.trim().isEmpty ? null : condition.trim(), note: note);
+    e.receiptId = e.id;
+    final who = e.customerName.isNotEmpty ? e.customerName : (e.customer.isNotEmpty ? e.customer : 'cliente');
+    state.receipts.insert(
+      0,
+      Receipt(
+        id: e.id,
+        supplier: 'Devolución ${e.docNumber} · $who',
+        date: e.entryDate,
+        items: [ReceiptItem(productId: e.productId, qtyReceived: e.qty)],
+        kind: ReceiptKind.devolucion,
+        refDoc: e.originalInvoice.isEmpty ? null : e.originalInvoice,
+      ),
+    );
+    _audit('devolución ${e.id} aceptada (${e.qty} × ${e.itemCode}, ${e.docNumber})',
+        state.currentUser?.name ?? state.actor);
+  }
+
+  /// Da de baja [qty] unidades (llegó dañada o defectuosa): no entra a inventario.
+  /// Si es parte, el resto sigue por revisar.
+  String? writeOffReturn(String id, int qty, String reason, {String note = ''}) {
+    final e = state.returns.firstWhereOrNull((x) => x.id == id);
+    final err = _checkReturn(e) ?? _checkReturnReason(reason, note);
+    if (err != null) return err;
+    if (qty < 1 || qty > e!.qty) return 'La cantidad debe estar entre 1 y ${e!.qty}.';
+    final part = _splitReturn(e, qty);
+    _close(part, ReturnStatus.baja, reason: reason, note: note);
+    final n = note.trim();
+    _log(_mv('baja', part.productId, qty, part.id, 'Devolución ${part.docNumber}', 'Baja',
+        note: [reason, if (n.isNotEmpty) n].join(' · ')));
+    _audit('devolución ${part.id} dada de baja ($qty × ${part.itemCode}): $reason', state.currentUser?.name ?? state.actor);
+    _emit();
+    return null;
+  }
+
+  /// Descarta [qty] unidades: no llegaron físicamente (o nunca salieron del almacén).
+  /// No mueve inventario. Si es parte, el resto sigue por revisar.
+  String? discardReturn(String id, int qty, String reason, {String note = ''}) {
+    final e = state.returns.firstWhereOrNull((x) => x.id == id);
+    final err = _checkReturn(e) ?? _checkReturnReason(reason, note);
+    if (err != null) return err;
+    if (qty < 1 || qty > e!.qty) return 'La cantidad debe estar entre 1 y ${e!.qty}.';
+    final part = _splitReturn(e, qty);
+    _close(part, ReturnStatus.descartada, reason: reason, note: note);
+    _audit('devolución ${part.id} descartada ($qty × ${part.itemCode}): $reason', state.currentUser?.name ?? state.actor);
+    _emit();
+    return null;
+  }
+
+  String? _checkReturnReason(String reason, String note) {
+    if (reason.trim().isEmpty) return 'Elige el motivo.';
+    if (reason == kReasonOther && note.trim().isEmpty) return 'El motivo «Otro» necesita una nota.';
+    return null;
   }
 
   /// Actualiza el cliente, su categoría y su nivel de precio vigentes en una orden de RM ya importada.
@@ -2506,7 +2855,26 @@ class AppNotifier extends Notifier<AppState> {
   }
 
   /// Encontrado: vuelve a una canasta con su lote y fecha originales.
-  String? resolvePendingFound(String id, String bin, int qty) {
+  String? resolvePendingFound(String id, String bin, int qty) => _resolvePendingFound(id, bin, qty);
+
+  /// Da de baja un pendiente con su motivo.
+  String? writeOffPending(String id, int qty, String reason, {String note = ''}) =>
+      _writeOffPending(id, qty, reason, note);
+
+  /// Solo para «no estaba aquí» del piqueo (pestaña Devoluciones, permiso «revisar devoluciones»).
+  /// Las implementaciones privadas evitan que el cliente remoto mande otra acción por dentro.
+  String? resolvePickMissingFound(String id, String bin, int qty) =>
+      _pickMissingError(id) ?? _resolvePendingFound(id, bin, qty);
+
+  String? writeOffPickMissing(String id, int qty, String reason, {String note = ''}) =>
+      _pickMissingError(id) ?? _writeOffPending(id, qty, reason, note);
+
+  String? _pickMissingError(String id) {
+    final p = state.pendingItems.firstWhereOrNull((x) => x.id == id);
+    return p == null || p.reason == kPickMissingReason ? null : 'Ese pendiente no viene del piqueo.';
+  }
+
+  String? _resolvePendingFound(String id, String bin, int qty) {
     final p = state.pendingItems.firstWhereOrNull((x) => x.id == id);
     final err = _checkPending(p, qty);
     if (err != null) return err;
@@ -2519,8 +2887,7 @@ class AppNotifier extends Notifier<AppState> {
     return null;
   }
 
-  /// Da de baja un pendiente con su motivo.
-  String? writeOffPending(String id, int qty, String reason, {String note = ''}) {
+  String? _writeOffPending(String id, int qty, String reason, String note) {
     final p = state.pendingItems.firstWhereOrNull((x) => x.id == id);
     final err = _checkPending(p, qty);
     if (err != null) return err;

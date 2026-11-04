@@ -3,7 +3,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
-enum Area { dashboard, receiving, orders, picking, transfers, audit, auditManage, history, users }
+enum Area { dashboard, receiving, orders, picking, transfers, audit, auditManage, returns, history, users }
 
 const kAreaLabels = <Area, String>{
   Area.dashboard: 'Dashboard',
@@ -13,6 +13,7 @@ const kAreaLabels = <Area, String>{
   Area.transfers: 'Transferencias',
   Area.audit: 'Auditoría: contar',
   Area.auditManage: 'Auditoría: crear, cerrar, pendientes y reporte',
+  Area.returns: 'Auditoría: revisar devoluciones',
   Area.history: 'Historial',
   Area.users: 'Administración',
 };
@@ -25,10 +26,14 @@ const kRoles = <String>[
   'Auditor',
 ];
 
-/// Áreas agregadas después de la primera versión de users.json: un archivo sin
-/// `permsVersion` las recibe del preset del rol (para que admin y supervisor no las pierdan).
-const kPermsVersion = 2;
-const kAreasSincePermsV2 = <Area>{Area.audit, Area.auditManage};
+/// Áreas agregadas después de la primera versión de users.json, por la versión que las trajo:
+/// un archivo con `permsVersion` anterior las recibe del preset del rol (para que admin y
+/// supervisor no las pierdan). Sin `permsVersion` = versión 1.
+const kPermsVersion = 3;
+const kAreasByPermsVersion = <int, Set<Area>>{
+  2: {Area.audit, Area.auditManage},
+  3: {Area.returns},
+};
 
 Map<Area, bool> rolePreset(String role) {
   Set<Area> on;
@@ -62,9 +67,15 @@ bool isValidPin(String pin) => RegExp(r'^\d{4}$').hasMatch(pin);
 
 /// Completa las áreas nuevas desde el preset del rol cuando los permisos vienen de una versión anterior.
 Map<Area, bool> migratePerms(Map<Area, bool> perms, String role, Object? version) {
-  if (version is num && version >= kPermsVersion) return perms;
+  final from = version is num ? version.toInt() : 1;
+  if (from >= kPermsVersion) return perms;
   final preset = rolePreset(role);
-  return {...perms, for (final a in kAreasSincePermsV2) a: preset[a] ?? false};
+  return {
+    ...perms,
+    for (final MapEntry(key: v, value: areas) in kAreasByPermsVersion.entries)
+      if (v > from)
+        for (final a in areas) a: preset[a] ?? false,
+  };
 }
 
 class AppUser {

@@ -359,6 +359,14 @@ class AppServer {
           if (!need(user.can(Area.users))) return;
           sync.setSkipTransactions({for (final x in a['value'] as List) (x as num).toInt()});
           return reply({'result': true});
+        case 'sync.setReturnsEnabled':
+          if (!need(user.can(Area.users))) return;
+          sync.setReturnsEnabled(a['value'] == true);
+          return reply({'result': true});
+        case 'sync.setReturnsFirstRunDays':
+          if (!need(user.can(Area.users))) return;
+          sync.setReturnsFirstRunDays((a['value'] as num).toInt());
+          return reply({'result': true});
         default:
           if (name.startsWith('backup.')) {
             if (!need(user.can(Area.users))) return;

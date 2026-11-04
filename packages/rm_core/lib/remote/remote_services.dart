@@ -82,6 +82,18 @@ class RemoteSyncService extends SyncService {
   }
 
   @override
+  void setReturnsEnabled(bool v) {
+    state.settings.returnsEnabled = v;
+    _send('sync.setReturnsEnabled', v);
+  }
+
+  @override
+  void setReturnsFirstRunDays(int days) {
+    state.settings.returnsFirstRunDays = days.clamp(1, kMaxReturnsFirstRunDays);
+    _send('sync.setReturnsFirstRunDays', state.settings.returnsFirstRunDays);
+  }
+
+  @override
   Future<List<SyncPart>> syncNow({bool auto = false}) async {
     if (state.running) return state.parts;
     try {

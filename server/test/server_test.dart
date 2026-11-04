@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:riverpod/riverpod.dart';
+import 'package:rm_core/api/rm_api.dart';
 import 'package:rm_core/backup/backup_service.dart';
 import 'package:rm_core/models/inv_row.dart';
 import 'package:rm_core/notify/toast_state.dart';
@@ -180,6 +181,34 @@ void main() {
     expect(picker.toasts.single, contains('permiso'));
     expect(serverState().users.length, count);
     expect(picker.s.users.length, count, reason: 'se deshace al recibir el rechazo');
+  });
+
+  test('devoluciones: la supervisora acepta desde su dispositivo; un piqueador no puede', () async {
+    serverContainer.read(appProvider.notifier).importReturns('s0', [
+      RmReturnLine(
+        returnNumber: 'V78',
+        returnType: 70,
+        returnDate: DateTime(2026, 9, 10),
+        lineId: 'V78-1',
+        itemCode: 'MI-20565R15',
+        description: 'Michelin',
+        quantity: 2,
+      ),
+    ]);
+    final id = serverState().returns.single.id;
+    final picker = await device('3333', name: 'P');
+    await until(() => picker.s.returns.isNotEmpty);
+    expect(picker.n.discardReturn(id, 2, 'No llegó al almacén'), isNull, reason: 'predicción local');
+    await picker.settle();
+    expect(picker.toasts.single, contains('permiso'));
+    expect(serverState().returns.single.isOpen, isTrue);
+
+    final sup = await device('2222', name: 'S');
+    expect(sup.n.acceptReturn(id, 2, DateTime(2026, 8, 1)), isNull);
+    await sup.settle();
+    expect(serverState().returns.single.receiptId, id);
+    expect(serverState().receipts.firstWhere((r) => r.id == id).isReturn, isTrue);
+    expect(serverState().returns.single.reviewedBy, 'M. Rivera');
   });
 
   test('cambio de PIN confirmado por el servidor (no repetido)', () async {

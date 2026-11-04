@@ -113,6 +113,11 @@ DateTime _date(Map<String, dynamic> j, String k) {
   return d;
 }
 
+DateTime? _dateOrNull(Map<String, dynamic> j, String k) {
+  final s = _str(j, k);
+  return s.isEmpty ? null : DateTime.tryParse(s.replaceFirst(' ', 'T'));
+}
+
 /// Una línea de una orden abierta (`OrdOpenOrders`, solicitado al equipo de la API).
 class RmOrderLine {
   RmOrderLine({
@@ -194,6 +199,8 @@ class RmInvoiceLine {
     this.transaction = 50,
     this.isService = false,
     this.originalInvoice = '',
+    this.originalInvoiceDate,
+    this.returnReason = '',
     this.categoryId,
     this.categoryName = '',
     this.priceLevelId,
@@ -222,6 +229,12 @@ class RmInvoiceLine {
   /// En una anulación, la factura original.
   final String originalInvoice;
 
+  /// Fecha de la factura original, si la API la entrega (solicitado; null = no viene).
+  final DateTime? originalInvoiceDate;
+
+  /// Motivo de la devolución, si la API lo entrega (solicitado).
+  final String returnReason;
+
   /// Categoría y nivel de precio vigentes del cliente (ver [RmOrderLine.categoryId]).
   final int? categoryId;
   final String categoryName;
@@ -246,6 +259,8 @@ class RmInvoiceLine {
         invoiceDate: _withTime(j),
         voidedQuantity: _num(j, 'VoidedQuantity'),
         originalInvoice: _str(j, 'OriginalInvoice'),
+        originalInvoiceDate: _dateOrNull(j, 'OriginalInvoiceDate'),
+        returnReason: _str(j, 'ReturnReason'),
         customer: _str(j, 'Cliente'),
         customerName: _str(j, 'ClienteNombre').isEmpty ? _str(j, 'Cliente') : _str(j, 'ClienteNombre'),
         orderNumber: _str(j, 'OrderNumber'),
@@ -263,6 +278,98 @@ class RmInvoiceLine {
       );
 }
 
+/// Una línea de mercancía devuelta o anulada (`SalesReturnsByDate`, solicitado al equipo de la
+/// API; ver docs/SOLICITUD_API_DEVOLUCIONES.md). Mientras no exista se arma desde
+/// `SalesInvoicesByDate` con [RmReturnLine.fromInvoiceLine].
+class RmReturnLine {
+  RmReturnLine({
+    required this.returnNumber,
+    required this.returnType,
+    required this.returnDate,
+    required this.lineId,
+    required this.itemCode,
+    required this.description,
+    required this.quantity,
+    this.originalInvoice = '',
+    this.originalInvoiceDate,
+    this.customer = '',
+    this.customerName = '',
+    this.reason = '',
+    this.isService = false,
+    this.isFuel = false,
+  });
+
+  /// `V78`, `VP232-1`…
+  final String returnNumber;
+
+  /// 70 devolución / void completo · 71 anulación parcial.
+  final int returnType;
+  final DateTime returnDate;
+  final String lineId;
+  final String itemCode;
+  final String description;
+
+  /// Unidades que regresan (siempre positiva).
+  final double quantity;
+  final String originalInvoice;
+  final DateTime? originalInvoiceDate;
+  final String customer;
+  final String customerName;
+  final String reason;
+  final bool isService;
+  final bool isFuel;
+
+  static const returnTypes = {70, 71};
+
+  factory RmReturnLine.fromJson(Map<String, dynamic> j) {
+    final d = _date(j, 'ReturnDate');
+    final t = RegExp(r'^(\d{1,2}):(\d{2})(?::(\d{2}))?').firstMatch(_str(j, 'ReturnTime'));
+    final date = (t == null || d.hour != 0 || d.minute != 0)
+        ? d
+        : DateTime(d.year, d.month, d.day, int.parse(t[1]!), int.parse(t[2]!), int.parse(t[3] ?? '0'));
+    return RmReturnLine(
+      returnNumber: _str(j, 'ReturnNumber'),
+      returnType: _num(j, 'ReturnType').toInt(),
+      returnDate: date,
+      lineId: _str(j, 'LineID'),
+      itemCode: _str(j, 'ItemCode'),
+      description: _str(j, 'Description'),
+      quantity: _num(j, 'Quantity').abs(),
+      originalInvoice: _str(j, 'OriginalInvoice'),
+      originalInvoiceDate: _dateOrNull(j, 'OriginalInvoiceDate'),
+      customer: _str(j, 'Customer'),
+      customerName: _str(j, 'CustomerName').isEmpty ? _str(j, 'Customer') : _str(j, 'CustomerName'),
+      reason: _str(j, 'Reason'),
+      isService: _bool(j, 'IsService'),
+      isFuel: _bool(j, 'IsFuel'),
+    );
+  }
+
+  /// Fuente provisional: una línea de `SalesInvoicesByDate` con Transaccion 70/71 (null si no
+  /// es devolución). La cantidad se toma en valor absoluto (el signo en RM está por verificar);
+  /// si viene en 0 se usa la anulada. El `VoidParcial` de la línea de la factura original
+  /// NUNCA se usa: la anulación se cuenta solo desde su documento VP (sin doble conteo).
+  static RmReturnLine? fromInvoiceLine(RmInvoiceLine l) {
+    if (!returnTypes.contains(l.transaction)) return null;
+    final q = l.quantity.abs() > 0 ? l.quantity.abs() : l.voidedQuantity.abs();
+    return RmReturnLine(
+      returnNumber: l.invoiceNumber,
+      returnType: l.transaction,
+      returnDate: l.invoiceDate,
+      lineId: l.lineId,
+      itemCode: l.itemCode,
+      description: l.description,
+      quantity: q,
+      originalInvoice: l.originalInvoice,
+      originalInvoiceDate: l.originalInvoiceDate,
+      customer: l.customer,
+      customerName: l.customerName,
+      reason: l.returnReason,
+      isService: l.isService,
+    );
+  }
+}
+
 /// Contrato de la API de una tienda. Se separa de HTTP para poder probar sin red.
 abstract class RmApi {
   /// Prueba de salud. Devuelve un mensaje legible o lanza [RmApiException].
@@ -276,6 +383,10 @@ abstract class RmApi {
 
   /// Facturas de venta entre dos fechas (ambas incluidas).
   Future<List<RmInvoiceLine>> invoicesByDate(DateTime from, DateTime to);
+
+  /// Devoluciones y anulaciones entre dos fechas (ambas incluidas). Lanza [RmApiException]
+  /// con `notAvailable` si la API aún no tiene `SalesReturnsByDate`.
+  Future<List<RmReturnLine>> returnsByDate(DateTime from, DateTime to);
 }
 
 /// Agrega `/cse.api.v1` si el usuario solo escribió host:puerto.
@@ -386,6 +497,19 @@ class RmHttpApi implements RmApi {
         'SalesInvoicesByDate',
         {'DateFrom': fmtApiDate(a), 'DateTo': fmtApiDate(b)},
         RmInvoiceLine.fromJson,
+      ));
+    }
+    return out;
+  }
+
+  @override
+  Future<List<RmReturnLine>> returnsByDate(DateTime from, DateTime to) async {
+    final out = <RmReturnLine>[];
+    for (final (a, b) in dateChunks(from, to, invoiceMaxDays)) {
+      out.addAll(await _list(
+        'SalesReturnsByDate',
+        {'DateFrom': fmtApiDate(a), 'DateTo': fmtApiDate(b)},
+        RmReturnLine.fromJson,
       ));
     }
     return out;

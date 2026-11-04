@@ -628,4 +628,45 @@ class RemoteAppNotifier extends AppNotifier {
     'reason': reason,
     'note': note,
   }, () => super.writeOffPending(id, qty, reason, note: note));
+
+  // ---------- Auditoría: devoluciones ----------
+
+  @override
+  String? acceptReturn(String id, int qty, DateTime entryDate, {String condition = '', String note = ''}) => _cmd(
+    'acceptReturn',
+    {'id': id, 'qty': qty, 'entryDate': entryDate.toIso8601String(), 'condition': condition, 'note': note},
+    () => super.acceptReturn(id, qty, entryDate, condition: condition, note: note),
+  );
+
+  @override
+  ({int accepted, int skipped}) acceptReturns(List<String> ids) =>
+      _cmd('acceptReturns', {'ids': ids}, () => super.acceptReturns(ids));
+
+  @override
+  String? writeOffReturn(String id, int qty, String reason, {String note = ''}) => _cmd(
+    'writeOffReturn',
+    {'id': id, 'qty': qty, 'reason': reason, 'note': note},
+    () => super.writeOffReturn(id, qty, reason, note: note),
+  );
+
+  @override
+  String? discardReturn(String id, int qty, String reason, {String note = ''}) => _cmd(
+    'discardReturn',
+    {'id': id, 'qty': qty, 'reason': reason, 'note': note},
+    () => super.discardReturn(id, qty, reason, note: note),
+  );
+
+  @override
+  String? resolvePickMissingFound(String id, String bin, int qty) => _cmd(
+    'resolvePickMissingFound',
+    {'id': id, 'bin': bin, 'qty': qty},
+    () => super.resolvePickMissingFound(id, bin, qty),
+  );
+
+  @override
+  String? writeOffPickMissing(String id, int qty, String reason, {String note = ''}) => _cmd(
+    'writeOffPickMissing',
+    {'id': id, 'qty': qty, 'reason': reason, 'note': note},
+    () => super.writeOffPickMissing(id, qty, reason, note: note),
+  );
 }

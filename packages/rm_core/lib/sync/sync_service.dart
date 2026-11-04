@@ -101,6 +101,28 @@ class SyncService extends Notifier<SyncState> {
     _save();
   }
 
+  void setReturnsEnabled(bool v) {
+    state.settings.returnsEnabled = v;
+    _save();
+  }
+
+  void setReturnsFirstRunDays(int days) {
+    state.settings.returnsFirstRunDays = days.clamp(1, kMaxReturnsFirstRunDays);
+    _save();
+  }
+
+  /// Desde cuándo pedir devoluciones: la primera vez [SyncSettings.returnsFirstRunDays] hacia
+  /// atrás; después, desde la última detección correcta menos un día.
+  DateTime returnsFrom(DateTime now) {
+    final last = state.settings.returnsLastSync;
+    var from = last == null
+        ? now.subtract(Duration(days: state.settings.returnsFirstRunDays))
+        : last.subtract(const Duration(days: 1));
+    final minFrom = now.subtract(const Duration(days: 365));
+    if (from.isBefore(minFrom)) from = minFrom;
+    return from;
+  }
+
   /// Ejecuta una sincronización completa. Si ya hay una en curso, no lanza otra.
   Future<List<SyncPart>> syncNow({bool auto = false}) async {
     if (state.running) return state.parts;
@@ -138,7 +160,20 @@ class SyncService extends Notifier<SyncState> {
           return (r.summary, r.created);
         }));
       }
-      // 3) Foto de órdenes abiertas.
+      // 3) Devoluciones del almacén central (después de facturas: el libro de despachos ya
+      //    está al día para saber si la mercancía salió del almacén).
+      if (state.settings.returnsEnabled && central.apiUrl.trim().isNotEmpty) {
+        var ok = false;
+        parts.add(await _part('Devoluciones', () async {
+          final (lines, provisional) = await app.fetchReturns(central.id, returnsFrom(now), now);
+          final r = app.importReturns(central.id, lines).withProvisional(provisional);
+          ok = true;
+          return (r.summary, r.created);
+        }));
+        if (ok) state.settings.returnsLastSync = now;
+      }
+
+      // 4) Foto de órdenes abiertas.
       for (final st in stores) {
         parts.add(await _part('Órdenes · ${st.name}', () async {
           final r = app.importOpenOrders(st.id, await app.fetchOpenOrders(st.id));

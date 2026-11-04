@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:piqueo_fifo_centeno/main.dart';
 import 'package:piqueo_fifo_centeno/shell/sidebar.dart';
+import 'package:rm_core/api/rm_api.dart';
+import 'package:rm_core/models/app_user.dart';
 import 'package:rm_core/state/app_state.dart';
 
 late ProviderContainer container;
@@ -20,16 +22,50 @@ Future<void> pumpApp(WidgetTester t, String pin, {Size size = const Size(1440, 1
   await t.pumpAndSettle();
 }
 
-Future<void> tapText(WidgetTester t, String text) async {
-  final f = find.text(text);
-  expect(f, findsWidgets, reason: 'no se encontró "$text"');
-  await t.ensureVisible(f.first);
+Future<void> tapText(WidgetTester t, String text, {bool last = false}) async {
+  final all = find.text(text);
+  expect(all, findsWidgets, reason: 'no se encontró "$text"');
+  final f = last ? all.last : all.first;
+  await t.ensureVisible(f);
   await t.pumpAndSettle();
-  await t.tap(f.first);
+  await t.tap(f);
   await t.pumpAndSettle();
 }
 
+/// Una devolución de RM por revisar (almacén central).
+void addReturn(String doc, {String original = 'F1'}) => n.importReturns('s0', [
+      RmReturnLine(
+        returnNumber: doc,
+        returnType: 70,
+        returnDate: DateTime(2026, 9, 10, 11),
+        lineId: '$doc-1',
+        itemCode: 'MI-20565R15',
+        description: 'Michelin',
+        quantity: 2,
+        originalInvoice: original,
+        customerName: 'Ferretería Cliente con un nombre largo',
+      ),
+    ]);
+
 void main() {
+  testWidgets('quien solo revisa devoluciones ve solo la pestaña Devoluciones', (t) async {
+    await pumpApp(t, '2222');
+    s.currentUser!.perms = {for (final a in Area.values) a: a == Area.dashboard || a == Area.returns};
+    addReturn('V78');
+    n.navigate(AppView.audit);
+    await t.pumpAndSettle();
+    expect(find.text('Auditorías'), findsNothing);
+    expect(find.text('Contar'), findsNothing);
+    expect(find.text('Pendientes'), findsNothing);
+    expect(find.text('V78'), findsOneWidget);
+    await tapText(t, 'Aceptar');
+    await tapText(t, 'Aceptar', last: true); // botón del diálogo
+    expect(s.receipts.first.isReturn, isTrue);
+    expect(s.openReturns, isEmpty);
+    expect(t.takeException(), isNull);
+    await t.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('conteo a ciegas: el auditor escanea y nunca ve lo esperado', (t) async {
     await pumpApp(t, '5555');
     final id = n.createAudit(bins: ['A-01-02']).id!; // sistema: p1 × 20
@@ -95,6 +131,19 @@ void main() {
         expect(t.takeException(), isNull, reason: 'Pendientes');
         await tapText(t, 'Reporte');
         expect(t.takeException(), isNull, reason: 'Reporte');
+        addReturn('V78');
+        addReturn('V79', original: '');
+        await t.pumpAndSettle();
+        await tapText(t, 'Devoluciones (2)');
+        expect(t.takeException(), isNull, reason: 'Devoluciones');
+        await tapText(t, 'Aceptar');
+        expect(t.takeException(), isNull, reason: 'diálogo aceptar');
+        await tapText(t, 'Cancelar');
+        await tapText(t, 'Descartar');
+        expect(t.takeException(), isNull, reason: 'diálogo descartar');
+        await tapText(t, 'Descartar', last: true); // botón del diálogo
+        await tapText(t, 'Revisados');
+        expect(t.takeException(), isNull, reason: 'Devoluciones revisadas');
         n.navigate(AppView.transfers);
         await t.pumpAndSettle();
         await tapText(t, 'Canasta completa');

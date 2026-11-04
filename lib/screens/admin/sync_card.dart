@@ -23,12 +23,14 @@ class _SyncCardState extends ConsumerState<SyncCard> {
   late final _lookback = TextEditingController(text: '${ref.read(syncProvider).settings.lookbackDays}');
   late final _skipTx =
       TextEditingController(text: (ref.read(syncProvider).settings.skipTransactions.toList()..sort()).join(', '));
+  late final _returnsDays = TextEditingController(text: '${ref.read(syncProvider).settings.returnsFirstRunDays}');
   String? _skipError;
 
   @override
   void dispose() {
     _lookback.dispose();
     _skipTx.dispose();
+    _returnsDays.dispose();
     super.dispose();
   }
 
@@ -108,6 +110,44 @@ class _SyncCardState extends ConsumerState<SyncCard> {
                 'Por defecto 10, 11, 12 y 19: ventas en caja, el cliente se lleva la mercancía. '
                     'Las facturas de una orden ya importada no se despachan dos veces.',
             style: T.body(context, size: 12, color: _skipError != null ? c.crit : c.inkMuted),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 14,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Switch(
+                  value: sync.settings.returnsEnabled,
+                  onChanged: (v) {
+                    n.setReturnsEnabled(v);
+                    showToast(ref, v ? 'Detección de devoluciones activada' : 'Detección de devoluciones apagada');
+                  },
+                ),
+                const SizedBox(width: 8),
+                Flexible(child: Text('Detectar devoluciones (almacén central)', style: T.body(context, size: 13.5))),
+              ]),
+              LabeledField(
+                label: 'Días en la primera detección (máx. $kMaxReturnsFirstRunDays)',
+                width: 250,
+                child: NumField(
+                  controller: _returnsDays,
+                  onChanged: (v) {
+                    final d = parseInt(v);
+                    if (d > 0) n.setReturnsFirstRunDays(d);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            sync.settings.returnsLastSync == null
+                ? 'Las devoluciones y anulaciones de RM quedan por revisar en Auditoría ▸ Devoluciones; nada entra '
+                    'al inventario hasta aceptarlas. Actívalo cuando se haya verificado el formato en la base de RM.'
+                : 'Última detección de devoluciones: ${fmtDateTime(sync.settings.returnsLastSync!)}',
+            style: T.body(context, size: 12, color: c.inkMuted),
           ),
           const SizedBox(height: 14),
           Text(

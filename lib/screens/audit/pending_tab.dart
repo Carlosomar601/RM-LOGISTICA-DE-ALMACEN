@@ -27,8 +27,6 @@ class PendingTab extends ConsumerStatefulWidget {
 class _PendingTabState extends ConsumerState<PendingTab> {
   bool _showResolved = false;
 
-  AppNotifier get _n => ref.read(appProvider.notifier);
-
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(appProvider);
@@ -125,12 +123,12 @@ class _PendingTabState extends ConsumerState<PendingTab> {
                     Wrap(spacing: 6, runSpacing: 6, children: [
                       FilledButton(
                         style: compactFilled(),
-                        onPressed: () => _found(context, p),
+                        onPressed: () => showPendingFoundDialog(context, ref, p),
                         child: const Text('Encontrado'),
                       ),
                       OutlinedButton(
                         style: compactOutlined(fg: context.c.crit),
-                        onPressed: () => _writeOff(context, p),
+                        onPressed: () => showPendingWriteOffDialog(context, ref, p),
                         child: const Text('Dar de baja'),
                       ),
                     ]),
@@ -141,114 +139,124 @@ class _PendingTabState extends ConsumerState<PendingTab> {
       ],
     );
   }
+}
 
-  Future<void> _found(BuildContext context, PendingItem p) async {
-    final s = ref.read(appProvider);
-    final codes = s.centralBinCodes.where((b) => !s.lockedBins.contains(b)).toList()..sort();
-    var bin = codes.contains(p.originBin) ? p.originBin : (codes.isEmpty ? null : codes.first);
-    final qty = TextEditingController(text: '${p.qty}');
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: Text('Encontrado · ${p.id}'),
-          content: SizedBox(
-            width: 380,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                tText(ctx, 'Vuelve al inventario con el lote ${p.lot} y la fecha ${fmtDate(p.entryDate)} originales.',
-                    muted: true, maxLines: 3),
-                const SizedBox(height: 12),
-                LabeledField(
-                  label: 'Canasta donde apareció',
-                  child: AppDropdown<String>(
-                    value: bin,
-                    mono: true,
-                    items: [for (final c in codes) ddItem(ctx, c, c == p.originBin ? '$c (la misma)' : c, mono: true)],
-                    onChanged: (v) => setD(() => bin = v),
-                  ),
+/// «Encontrado»: vuelve a una canasta con su lote y fecha originales. [pickMissing]: desde la
+/// pestaña Devoluciones (solo faltantes del piqueo; permiso «revisar devoluciones»).
+Future<void> showPendingFoundDialog(BuildContext context, WidgetRef ref, PendingItem p, {bool pickMissing = false}) async {
+  final s = ref.read(appProvider);
+  final codes = s.centralBinCodes.where((b) => !s.lockedBins.contains(b)).toList()..sort();
+  var bin = codes.contains(p.originBin) ? p.originBin : (codes.isEmpty ? null : codes.first);
+  final qty = TextEditingController(text: '${p.qty}');
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: Text('Encontrado · ${p.id}'),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              tText(ctx, 'Vuelve al inventario con el lote ${p.lot} y la fecha ${fmtDate(p.entryDate)} originales.',
+                  muted: true, maxLines: 3),
+              const SizedBox(height: 12),
+              LabeledField(
+                label: 'Canasta donde apareció',
+                child: AppDropdown<String>(
+                  value: bin,
+                  mono: true,
+                  items: [for (final c in codes) ddItem(ctx, c, c == p.originBin ? '$c (la misma)' : c, mono: true)],
+                  onChanged: (v) => setD(() => bin = v),
                 ),
-                const SizedBox(height: 12),
-                LabeledField(label: 'Cantidad (de ${p.qty})', child: NumField(controller: qty)),
-              ],
-            ),
+              ),
+              const SizedBox(height: 12),
+              LabeledField(label: 'Cantidad (de ${p.qty})', child: NumField(controller: qty)),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(
-              onPressed: () {
-                if (bin == null) return;
-                final err = _n.resolvePendingFound(p.id, bin!, parseInt(qty.text));
-                if (err != null) {
-                  showToast(ref, err);
-                  return;
-                }
-                Navigator.pop(ctx);
-                showToast(ref, '${p.id}: vuelve a $bin');
-              },
-              child: const Text('Confirmar'),
-            ),
-          ],
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () {
+              if (bin == null) return;
+              final n = ref.read(appProvider.notifier);
+              final err = pickMissing
+                  ? n.resolvePickMissingFound(p.id, bin!, parseInt(qty.text))
+                  : n.resolvePendingFound(p.id, bin!, parseInt(qty.text));
+              if (err != null) {
+                showToast(ref, err);
+                return;
+              }
+              Navigator.pop(ctx);
+              showToast(ref, '${p.id}: vuelve a $bin');
+            },
+            child: const Text('Confirmar'),
+          ),
+        ],
       ),
-    );
-    qty.dispose();
-  }
+    ),
+  );
+  qty.dispose();
+}
 
-  Future<void> _writeOff(BuildContext context, PendingItem p) async {
-    var reason = kWriteOffReasons.first;
-    final qty = TextEditingController(text: '${p.qty}');
-    final note = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: Text('Dar de baja · ${p.id}'),
-          content: SizedBox(
-            width: 380,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                LabeledField(
-                  label: 'Motivo',
-                  child: AppDropdown<String>(
-                    value: reason,
-                    items: [for (final r in kWriteOffReasons) ddItem(ctx, r, r)],
-                    onChanged: (v) => setD(() => reason = v ?? reason),
-                  ),
+/// Da de baja un pendiente con motivo (ver [showPendingFoundDialog] para [pickMissing]).
+Future<void> showPendingWriteOffDialog(BuildContext context, WidgetRef ref, PendingItem p,
+  {bool pickMissing = false}) async {
+  var reason = kWriteOffReasons.first;
+  final qty = TextEditingController(text: '${p.qty}');
+  final note = TextEditingController();
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: Text('Dar de baja · ${p.id}'),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              LabeledField(
+                label: 'Motivo',
+                child: AppDropdown<String>(
+                  value: reason,
+                  items: [for (final r in kWriteOffReasons) ddItem(ctx, r, r)],
+                  onChanged: (v) => setD(() => reason = v ?? reason),
                 ),
-                const SizedBox(height: 12),
-                LabeledField(label: 'Cantidad (de ${p.qty})', child: NumField(controller: qty)),
-                const SizedBox(height: 12),
-                LabeledField(
-                  label: reason == kReasonOther ? 'Nota (obligatoria)' : 'Nota',
-                  child: AppTextField(controller: note),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 12),
+              LabeledField(label: 'Cantidad (de ${p.qty})', child: NumField(controller: qty)),
+              const SizedBox(height: 12),
+              LabeledField(
+                label: reason == kReasonOther ? 'Nota (obligatoria)' : 'Nota',
+                child: AppTextField(controller: note),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(
-              onPressed: () {
-                final err = _n.writeOffPending(p.id, parseInt(qty.text), reason, note: note.text);
-                if (err != null) {
-                  showToast(ref, err);
-                  return;
-                }
-                Navigator.pop(ctx);
-                showToast(ref, '${p.id} dado de baja');
-              },
-              child: const Text('Dar de baja'),
-            ),
-          ],
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () {
+              final n = ref.read(appProvider.notifier);
+              final err = pickMissing
+                  ? n.writeOffPickMissing(p.id, parseInt(qty.text), reason, note: note.text)
+                  : n.writeOffPending(p.id, parseInt(qty.text), reason, note: note.text);
+              if (err != null) {
+                showToast(ref, err);
+                return;
+              }
+              Navigator.pop(ctx);
+              showToast(ref, '${p.id} dado de baja');
+            },
+            child: const Text('Dar de baja'),
+          ),
+        ],
       ),
-    );
-    qty.dispose();
-    note.dispose();
-  }
+    ),
+  );
+  qty.dispose();
+  note.dispose();
 }
