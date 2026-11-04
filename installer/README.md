@@ -93,9 +93,9 @@ El resultado aparece en la última página del asistente.
 
 ```
 :: Servidor (primera vez):
-RMLogistics-Setup-1.2.0.exe /VERYSILENT /SUPPRESSMSGBOXES /TYPE=both /API=http://servidor:8180 /ADMINNAME="Nombre Apellido" /ADMINPIN=1234 /LOG=C:\ruta\setup.log
+RMLogistics-Setup-1.3.0.exe /VERYSILENT /SUPPRESSMSGBOXES /TYPE=both /API=http://servidor:8180 /ADMINNAME="Nombre Apellido" /ADMINPIN=1234 /LOG=C:\ruta\setup.log
 :: Cliente:
-RMLogistics-Setup-1.2.0.exe /VERYSILENT /SUPPRESSMSGBOXES /TYPE=client /SERVER=192.168.1.20
+RMLogistics-Setup-1.3.0.exe /VERYSILENT /SUPPRESSMSGBOXES /TYPE=client /SERVER=192.168.1.20
 ```
 
 - En un servidor **nuevo** (sin `users.json`) es obligatorio `/ADMINPIN`. En un cliente es obligatorio `/SERVER`.
